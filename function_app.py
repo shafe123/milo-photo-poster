@@ -220,58 +220,169 @@ def select_best_photo(blob_service_client: BlobServiceClient,
         return None
 
 
-def select_mood_and_prompt() -> Tuple[str, str]:
+def extract_milo_characteristics(blob_service_client: BlobServiceClient,
+                                cv_client: ComputerVisionClient,
+                                container_name: str) -> str:
+    """
+    Analyze existing Milo photos to extract common visual characteristics.
+    
+    Args:
+        blob_service_client: Azure Blob Storage client
+        cv_client: Computer Vision client
+        container_name: Name of the blob container
+        
+    Returns:
+        String description of Milo's visual characteristics
+    """
+    try:
+        container_client = blob_service_client.get_container_client(container_name)
+        # Get recent photos (last 30 days for a good sample)
+        recent_blobs = get_recent_blobs(container_client, days=30)
+        
+        if not recent_blobs:
+            logging.info("No photos found to analyze Milo's characteristics, using default description")
+            return "a domestic cat"
+        
+        # Analyze up to 5 recent photos to extract characteristics
+        all_tags = []
+        all_colors = []
+        all_descriptions = []
+        
+        analyzed_count = 0
+        max_to_analyze = min(5, len(recent_blobs))
+        
+        for blob in recent_blobs[:max_to_analyze]:
+            try:
+                blob_client = container_client.get_blob_client(blob.name)
+                
+                # Generate SAS token for temporary read access
+                sas_token = generate_blob_sas(
+                    account_name=blob_service_client.account_name,
+                    container_name=container_name,
+                    blob_name=blob.name,
+                    account_key=blob_service_client.credential.account_key,
+                    permission=BlobSasPermissions(read=True),
+                    expiry=datetime.utcnow() + timedelta(hours=1)
+                )
+                blob_url = f"{blob_client.url}?{sas_token}"
+                
+                # Analyze the image
+                analysis = analyze_image_quality(cv_client, blob_url)
+                
+                # Collect tags related to cat appearance
+                for tag, confidence in analysis['tags']:
+                    if confidence > 0.7:  # Only high-confidence tags
+                        all_tags.append(tag)
+                
+                # Collect color information
+                if analysis['dominant_colors']:
+                    all_colors.extend(analysis['dominant_colors'])
+                
+                # Collect descriptions
+                if analysis['description']:
+                    all_descriptions.append(analysis['description'])
+                
+                analyzed_count += 1
+                
+            except Exception as e:
+                logging.warning(f"Error analyzing blob {blob.name} for characteristics: {str(e)}")
+                continue
+        
+        if analyzed_count == 0:
+            logging.info("Could not analyze any photos, using default description")
+            return "a domestic cat"
+        
+        # Find most common tags (appearance-related)
+        from collections import Counter
+        tag_counts = Counter(all_tags)
+        
+        # Build description from most common characteristics
+        appearance_parts = []
+        
+        # Add color information
+        if all_colors:
+            color_counts = Counter(all_colors)
+            most_common_color = color_counts.most_common(1)[0][0]
+            appearance_parts.append(f"{most_common_color.lower()}")
+        
+        # Add relevant appearance tags (filter for cat-specific terms)
+        appearance_keywords = ['tabby', 'striped', 'spotted', 'calico', 'fluffy', 'short-hair', 
+                              'long-hair', 'whiskers', 'domestic', 'kitten', 'adult']
+        relevant_tags = [tag for tag, count in tag_counts.most_common(10) 
+                        if any(keyword in tag.lower() for keyword in appearance_keywords)]
+        
+        if relevant_tags:
+            appearance_parts.extend(relevant_tags[:2])  # Add top 2 relevant tags
+        
+        # Construct the description
+        if appearance_parts:
+            description = f"a {' '.join(appearance_parts)} cat"
+        else:
+            description = "a domestic cat"
+        
+        logging.info(f"Extracted Milo's characteristics: {description}")
+        return description
+        
+    except Exception as e:
+        logging.error(f"Error extracting Milo's characteristics: {str(e)}")
+        return "a domestic cat"
+
+
+def select_mood_and_prompt(milo_description: str = "an adorable cat") -> Tuple[str, str]:
     """
     Randomly select a mood and generate a corresponding prompt for Milo's AI image.
+    
+    Args:
+        milo_description: Visual description of Milo's appearance (from photo analysis)
     
     Returns:
         Tuple of (mood, prompt) for image generation
     """
     moods = {
         "happy": (
-            "A high-quality, professional photo of Milo, an adorable cat, looking happy and content. "
+            f"A high-quality, professional photo of Milo, {milo_description}, looking happy and content. "
             "Milo has a cheerful expression with bright eyes and relaxed posture. "
             "The photo captures Milo in a joyful moment, perhaps with a slight smile or playful demeanor. "
             "Natural lighting, sharp focus, photorealistic style."
         ),
         "playful": (
-            "A high-quality, professional photo of Milo, an adorable cat, in a playful mood. "
+            f"A high-quality, professional photo of Milo, {milo_description}, in a playful mood. "
             "Milo is captured mid-play, showing energetic and spirited behavior. "
             "Perhaps Milo is batting at a toy, pouncing, or in a playful stance with alert, mischievous eyes. "
             "Natural lighting, action captured with sharp focus, photorealistic style."
         ),
         "sleepy": (
-            "A high-quality, professional photo of Milo, an adorable cat, looking sleepy and relaxed. "
+            f"A high-quality, professional photo of Milo, {milo_description}, looking sleepy and relaxed. "
             "Milo is resting peacefully, maybe with half-closed eyes or curled up in a cozy position. "
             "The photo captures a serene, drowsy moment showing Milo's calm and tranquil side. "
             "Soft, warm lighting, sharp focus, photorealistic style."
         ),
         "curious": (
-            "A high-quality, professional photo of Milo, an adorable cat, looking curious and inquisitive. "
+            f"A high-quality, professional photo of Milo, {milo_description}, looking curious and inquisitive. "
             "Milo has wide, attentive eyes and alert ears, focused on something interesting. "
             "The photo captures Milo's natural curiosity and intelligence, with an engaged expression. "
             "Natural lighting, sharp focus, photorealistic style."
         ),
         "gloomy": (
-            "A high-quality, professional photo of Milo, an adorable cat, in a contemplative or gloomy mood. "
+            f"A high-quality, professional photo of Milo, {milo_description}, in a contemplative or gloomy mood. "
             "Milo has a slightly melancholic expression, perhaps gazing wistfully out a window or looking downcast. "
             "The photo captures a moody, pensive moment with softer, muted tones. "
             "Overcast or dim lighting, sharp focus, photorealistic style."
         ),
         "angry": (
-            "A high-quality, professional photo of Milo, an adorable cat, looking grumpy or mildly irritated. "
+            f"A high-quality, professional photo of Milo, {milo_description}, looking grumpy or mildly irritated. "
             "Milo has a stern expression with narrowed eyes or flattened ears, showing feline attitude. "
             "The photo captures Milo's feisty personality in a humorous, endearing way. "
             "Natural lighting, sharp focus, photorealistic style."
         ),
         "regal": (
-            "A high-quality, professional photo of Milo, an adorable cat, in a regal and majestic pose. "
+            f"A high-quality, professional photo of Milo, {milo_description}, in a regal and majestic pose. "
             "Milo sits with perfect posture, looking dignified and noble like royalty. "
             "The photo captures Milo's elegant and sophisticated side with a commanding presence. "
             "Dramatic lighting, sharp focus, photorealistic style."
         ),
         "cozy": (
-            "A high-quality, professional photo of Milo, an adorable cat, in a cozy and comfortable setting. "
+            f"A high-quality, professional photo of Milo, {milo_description}, in a cozy and comfortable setting. "
             "Milo is nestled in a warm spot, perhaps on a soft blanket or cushion, looking perfectly content. "
             "The photo captures a heartwarming moment of domestic bliss and comfort. "
             "Warm, inviting lighting, sharp focus, photorealistic style."
@@ -284,23 +395,39 @@ def select_mood_and_prompt() -> Tuple[str, str]:
     return mood, prompt
 
 
-def generate_ai_image(client: AzureOpenAI, deployment_name: str) -> Optional[bytes]:
+def generate_ai_image(client: AzureOpenAI, deployment_name: str,
+                      blob_service_client: BlobServiceClient = None,
+                      cv_client: ComputerVisionClient = None,
+                      container_name: str = None) -> Optional[bytes]:
     """
     Generate an AI image of Milo using Azure OpenAI DALL-E.
     Uses mood-based prompts to create varied and personalized images of Milo.
+    If blob storage and computer vision clients are provided, analyzes existing
+    photos to extract Milo's visual characteristics for more accurate generation.
     
     Args:
         client: Azure OpenAI client
         deployment_name: Name of the DALL-E deployment
+        blob_service_client: Optional Azure Blob Storage client for analyzing existing photos
+        cv_client: Optional Computer Vision client for analyzing existing photos
+        container_name: Optional container name where Milo's photos are stored
         
     Returns:
         Image bytes or None if generation failed
     """
     try:
-        # Select a random mood and get corresponding prompt
-        mood, prompt = select_mood_and_prompt()
+        # Extract Milo's characteristics from existing photos if clients are provided
+        milo_description = "an adorable cat"
+        if blob_service_client and cv_client and container_name:
+            milo_description = extract_milo_characteristics(
+                blob_service_client, cv_client, container_name
+            )
+        
+        # Select a random mood and get corresponding prompt with Milo's characteristics
+        mood, prompt = select_mood_and_prompt(milo_description)
         
         logging.info(f"Generating AI image with DALL-E using '{mood}' mood")
+        logging.info(f"Milo's appearance: {milo_description}")
         response = client.images.generate(
             model=deployment_name,
             prompt=prompt,
@@ -444,7 +571,14 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
                 azure_endpoint=OPENAI_ENDPOINT
             )
             
-            image_data = generate_ai_image(openai_client, OPENAI_DEPLOYMENT_NAME)
+            # Pass blob service and CV clients to extract Milo's characteristics
+            image_data = generate_ai_image(
+                openai_client, 
+                OPENAI_DEPLOYMENT_NAME,
+                blob_service_client=blob_service_client,
+                cv_client=cv_client,
+                container_name=BLOB_CONTAINER_NAME
+            )
             image_source = "AI generated (DALL-E)"
         
         if not image_data:
