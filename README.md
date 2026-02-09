@@ -135,7 +135,7 @@ az functionapp config appsettings set \
     OPENAI_DEPLOYMENT_NAME="dall-e-3" \
     POSTLY_API_KEY="<your-postly-api-key>" \
     POSTLY_WORKSPACE_ID="<your-postly-workspace-id>" \
-    DAYS_TO_CHECK="7"
+    DAYS_TO_CHECK="1"
 ```
 
 ### 3. Upload Milo Photos to Blob Storage
