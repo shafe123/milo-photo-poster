@@ -15,7 +15,8 @@ The function runs daily at 10:00 AM UTC, ensuring Milo gets his daily spotlight!
 ## Features
 
 - **Smart Photo Selection**: Uses Azure Computer Vision to score photos based on quality, composition, and relevance
-- **Mood-Based AI Generation**: When no suitable photos are found, generates personalized images of Milo with random moods (happy, playful, sleepy, curious, gloomy, angry, regal, cozy)
+- **AI-Powered Appearance Analysis**: Uses GPT-4 Vision to analyze actual Milo photos and extract detailed visual characteristics
+- **Mood-Based AI Generation**: When no suitable photos are found, DALL-E 3 generates images of Milo with random moods (happy, playful, sleepy, curious, gloomy, angry, regal, cozy) based on his actual appearance
 - **Automated Posting**: Seamless integration with Postly API for social media management
 - **Comprehensive Logging**: Detailed logging for monitoring and debugging
 - **Configurable**: Flexible settings for storage containers, scoring parameters, and scheduling
@@ -27,7 +28,9 @@ Before deploying this application, you'll need:
 1. **Azure Subscription** - [Create a free account](https://azure.microsoft.com/free/)
 2. **Azure Storage Account** - For storing Milo's photos
 3. **Azure Computer Vision Resource** - For analyzing photo quality
-4. **Azure OpenAI Service** - With DALL-E 3 deployment for AI image generation
+4. **Azure OpenAI Service** - With two deployments:
+   - **DALL-E 3** for AI image generation
+   - **GPT-4 Vision** (gpt-4o or gpt-4-turbo-vision) for analyzing Milo's appearance
 5. **Postly Account** - [Sign up at Postly.ai](https://postly.ai/) and obtain API credentials
 6. **Azure Functions Core Tools** (for local development) - [Installation guide](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
 7. **Python 3.9-3.11** - Azure Functions currently supports Python 3.9, 3.10, and 3.11
@@ -74,9 +77,10 @@ az cognitiveservices account create \
   --sku S0 \
   --location eastus
 
-# Deploy DALL-E 3 model (use Azure Portal for this step)
-# Go to Azure OpenAI Studio > Deployments > Create new deployment
-# Select: dall-e-3, Name: dall-e-3
+# Deploy models (use Azure Portal for this step)
+# Go to Azure OpenAI Studio > Deployments > Create new deployments
+# 1. Select: dall-e-3, Name: dall-e-3
+# 2. Select: gpt-4o (or gpt-4-turbo-vision), Name: gpt-4o
 ```
 
 #### Function App
@@ -133,6 +137,7 @@ az functionapp config appsettings set \
     OPENAI_API_KEY="<your-openai-key>" \
     OPENAI_ENDPOINT="https://<your-openai-resource>.openai.azure.com/" \
     OPENAI_DEPLOYMENT_NAME="dall-e-3" \
+    OPENAI_GPT4V_DEPLOYMENT_NAME="gpt-4o" \
     POSTLY_API_KEY="<your-postly-api-key>" \
     POSTLY_WORKSPACE_ID="<your-postly-workspace-id>" \
     DAYS_TO_CHECK="1"
@@ -320,11 +325,26 @@ The function uses a sophisticated scoring system to select the best photo:
 ### AI Fallback
 
 If no suitable photo is found in blob storage:
-- Uses Azure OpenAI DALL-E 3 to generate a personalized photo of Milo
+
+#### Step 1: Analyze Milo's Appearance with GPT-4 Vision
+- Retrieves 2-3 recent Milo photos from blob storage
+- Sends them to GPT-4 Vision (gpt-4o) to "see" what Milo actually looks like
+- GPT-4 Vision creates a detailed physical description including:
+  - Fur color and pattern (e.g., "orange tabby with bold dark stripes")
+  - Distinctive markings (e.g., "M-shaped marking on forehead", "white paws")
+  - Eye color
+  - Fur length and texture
+  - Unique features
+- Example output: "a fluffy orange tabby cat with bold dark stripes, white paws, and bright green eyes"
+
+#### Step 2: Generate Image with DALL-E 3
 - Randomly selects from 8 different moods: happy, playful, sleepy, curious, gloomy, angry, regal, or cozy
-- Each mood has a custom prompt that captures Milo's personality and the specific mood
+- Incorporates Milo's actual appearance description from GPT-4 Vision into the prompt
+- Example prompt: "A high-quality photo of Milo, a fluffy orange tabby cat with bold dark stripes and white paws, looking playful..."
 - Generated in 1024x1024 HD quality with natural, photorealistic style
-- Logs the selected mood for each generation
+- Result: AI-generated images that actually resemble Milo, not just a generic cat!
+
+**Why this works:** While DALL-E 3 can't directly see photos, GPT-4 Vision can. By using GPT-4 Vision as a "bridge" to describe Milo's appearance, we ensure DALL-E 3 generates images that match how Milo really looks.
 
 ### Postly Integration
 
