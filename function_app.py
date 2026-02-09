@@ -31,6 +31,7 @@ COMPUTER_VISION_KEY = os.environ.get("COMPUTER_VISION_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_ENDPOINT = os.environ.get("OPENAI_ENDPOINT")
 OPENAI_DEPLOYMENT_NAME = os.environ.get("OPENAI_DEPLOYMENT_NAME", "dall-e-3")
+OPENAI_GPT4V_DEPLOYMENT_NAME = os.environ.get("OPENAI_GPT4V_DEPLOYMENT_NAME", "gpt-4o")  # GPT-4 Vision deployment
 POSTLY_API_KEY = os.environ.get("POSTLY_API_KEY")
 POSTLY_WORKSPACE_ID = os.environ.get("POSTLY_WORKSPACE_ID")
 DAYS_TO_CHECK = int(os.environ.get("DAYS_TO_CHECK", "7"))
@@ -221,18 +222,20 @@ def select_best_photo(blob_service_client: BlobServiceClient,
 
 
 def extract_milo_characteristics(blob_service_client: BlobServiceClient,
-                                cv_client: ComputerVisionClient,
+                                openai_client: AzureOpenAI,
+                                gpt4v_deployment: str,
                                 container_name: str) -> str:
     """
-    Analyze existing Milo photos to extract common visual characteristics.
+    Analyze existing Milo photos using GPT-4 Vision to extract detailed visual characteristics.
     
     Args:
         blob_service_client: Azure Blob Storage client
-        cv_client: Computer Vision client
+        openai_client: Azure OpenAI client (for GPT-4 Vision)
+        gpt4v_deployment: Name of the GPT-4 Vision deployment
         container_name: Name of the blob container
         
     Returns:
-        String description of Milo's visual characteristics
+        String description of Milo's visual characteristics from GPT-4 Vision
     """
     try:
         container_client = blob_service_client.get_container_client(container_name)
@@ -241,21 +244,17 @@ def extract_milo_characteristics(blob_service_client: BlobServiceClient,
         
         if not recent_blobs:
             logging.info("No photos found to analyze Milo's characteristics, using default description")
-            return "a domestic cat"
+            return "an adorable cat"
         
-        # Analyze up to 5 recent photos to extract characteristics
-        all_tags = []
-        all_colors = []
-        all_descriptions = []
-        
-        analyzed_count = 0
-        max_to_analyze = min(5, len(recent_blobs))
+        # Analyze up to 3 recent photos with GPT-4 Vision
+        max_to_analyze = min(3, len(recent_blobs))
+        image_urls = []
         
         for blob in recent_blobs[:max_to_analyze]:
             try:
                 blob_client = container_client.get_blob_client(blob.name)
                 
-                # Generate SAS token for temporary read access
+                # Generate SAS token for temporary read access (1 hour)
                 sas_token = generate_blob_sas(
                     account_name=blob_service_client.account_name,
                     container_name=container_name,
@@ -265,67 +264,70 @@ def extract_milo_characteristics(blob_service_client: BlobServiceClient,
                     expiry=datetime.utcnow() + timedelta(hours=1)
                 )
                 blob_url = f"{blob_client.url}?{sas_token}"
-                
-                # Analyze the image
-                analysis = analyze_image_quality(cv_client, blob_url)
-                
-                # Collect tags related to cat appearance
-                for tag, confidence in analysis['tags']:
-                    if confidence > 0.7:  # Only high-confidence tags
-                        all_tags.append(tag)
-                
-                # Collect color information
-                if analysis['dominant_colors']:
-                    all_colors.extend(analysis['dominant_colors'])
-                
-                # Collect descriptions
-                if analysis['description']:
-                    all_descriptions.append(analysis['description'])
-                
-                analyzed_count += 1
+                image_urls.append(blob_url)
                 
             except Exception as e:
-                logging.warning(f"Error analyzing blob {blob.name} for characteristics: {str(e)}")
+                logging.warning(f"Error preparing blob {blob.name} for GPT-4 Vision: {str(e)}")
                 continue
         
-        if analyzed_count == 0:
-            logging.info("Could not analyze any photos, using default description")
-            return "a domestic cat"
+        if not image_urls:
+            logging.info("Could not prepare any photos for analysis, using default description")
+            return "an adorable cat"
         
-        # Find most common tags (appearance-related)
-        from collections import Counter
-        tag_counts = Counter(all_tags)
+        # Build GPT-4 Vision message with multiple images
+        content = [
+            {
+                "type": "text",
+                "text": (
+                    "You are analyzing photos of a cat named Milo. "
+                    "Please provide a detailed physical description of this cat that could be used "
+                    "to generate similar images. Focus on: fur color and pattern (e.g., orange tabby with "
+                    "dark stripes, calico, solid gray, etc.), fur length, eye color, distinctive markings, "
+                    "body type, and any unique features. "
+                    "Be specific and detailed, but concise (2-3 sentences max). "
+                    "Format your response as: 'a [description] cat' (e.g., 'a fluffy orange tabby cat "
+                    "with white paws and green eyes')."
+                )
+            }
+        ]
         
-        # Build description from most common characteristics
-        appearance_parts = []
+        # Add up to 3 images to the request
+        for url in image_urls[:3]:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": url}
+            })
         
-        # Add color information
-        if all_colors:
-            color_counts = Counter(all_colors)
-            most_common_color = color_counts.most_common(1)[0][0]
-            appearance_parts.append(f"{most_common_color.lower()}")
+        logging.info(f"Analyzing {len(image_urls)} photos with GPT-4 Vision to extract Milo's characteristics")
         
-        # Add relevant appearance tags (filter for cat-specific terms)
-        appearance_keywords = ['tabby', 'striped', 'spotted', 'calico', 'fluffy', 'short-hair', 
-                              'long-hair', 'whiskers', 'domestic', 'kitten', 'adult']
-        relevant_tags = [tag for tag, count in tag_counts.most_common(10) 
-                        if any(keyword in tag.lower() for keyword in appearance_keywords)]
+        # Call GPT-4 Vision
+        response = openai_client.chat.completions.create(
+            model=gpt4v_deployment,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert at analyzing and describing cat appearances for image generation."
+                },
+                {
+                    "role": "user",
+                    "content": content
+                }
+            ],
+            max_tokens=300
+        )
         
-        if relevant_tags:
-            appearance_parts.extend(relevant_tags[:2])  # Add top 2 relevant tags
+        description = response.choices[0].message.content.strip()
         
-        # Construct the description
-        if appearance_parts:
-            description = f"a {' '.join(appearance_parts)} cat"
-        else:
-            description = "a domestic cat"
+        # Clean up the description if needed
+        if not description.startswith("a "):
+            description = f"an adorable {description}"
         
-        logging.info(f"Extracted Milo's characteristics: {description}")
+        logging.info(f"GPT-4 Vision extracted Milo's characteristics: {description}")
         return description
         
     except Exception as e:
-        logging.error(f"Error extracting Milo's characteristics: {str(e)}")
-        return "a domestic cat"
+        logging.error(f"Error extracting Milo's characteristics with GPT-4 Vision: {str(e)}")
+        return "an adorable cat"
 
 
 def select_mood_and_prompt(milo_description: str = "an adorable cat") -> Tuple[str, str]:
@@ -396,31 +398,31 @@ def select_mood_and_prompt(milo_description: str = "an adorable cat") -> Tuple[s
 
 
 def generate_ai_image(client: AzureOpenAI, deployment_name: str,
+                      gpt4v_deployment: str = None,
                       blob_service_client: BlobServiceClient = None,
-                      cv_client: ComputerVisionClient = None,
                       container_name: str = None) -> Optional[bytes]:
     """
     Generate an AI image of Milo using Azure OpenAI DALL-E.
     Uses mood-based prompts to create varied and personalized images of Milo.
-    If blob storage and computer vision clients are provided, analyzes existing
-    photos to extract Milo's visual characteristics for more accurate generation.
+    If blob storage client and GPT-4 Vision deployment are provided, analyzes existing
+    photos using GPT-4 Vision to extract Milo's visual characteristics for accurate generation.
     
     Args:
         client: Azure OpenAI client
         deployment_name: Name of the DALL-E deployment
-        blob_service_client: Optional Azure Blob Storage client for analyzing existing photos
-        cv_client: Optional Computer Vision client for analyzing existing photos
+        gpt4v_deployment: Optional GPT-4 Vision deployment name for analyzing photos
+        blob_service_client: Optional Azure Blob Storage client for accessing existing photos
         container_name: Optional container name where Milo's photos are stored
         
     Returns:
         Image bytes or None if generation failed
     """
     try:
-        # Extract Milo's characteristics from existing photos if clients are provided
+        # Extract Milo's characteristics from existing photos using GPT-4 Vision
         milo_description = "an adorable cat"
-        if blob_service_client and cv_client and container_name:
+        if blob_service_client and gpt4v_deployment and container_name:
             milo_description = extract_milo_characteristics(
-                blob_service_client, cv_client, container_name
+                blob_service_client, client, gpt4v_deployment, container_name
             )
         
         # Select a random mood and get corresponding prompt with Milo's characteristics
@@ -571,12 +573,12 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
                 azure_endpoint=OPENAI_ENDPOINT
             )
             
-            # Pass blob service and CV clients to extract Milo's characteristics
+            # Pass blob service client and GPT-4 Vision deployment to extract Milo's characteristics
             image_data = generate_ai_image(
                 openai_client, 
                 OPENAI_DEPLOYMENT_NAME,
+                gpt4v_deployment=OPENAI_GPT4V_DEPLOYMENT_NAME,
                 blob_service_client=blob_service_client,
-                cv_client=cv_client,
                 container_name=BLOB_CONTAINER_NAME
             )
             image_source = "AI generated (DALL-E)"
