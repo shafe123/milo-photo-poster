@@ -8,7 +8,8 @@ This application runs as a scheduled Azure Function that:
 1. **Analyzes recent photos** from Azure Blob Storage using Azure Computer Vision API
 2. **Selects the most appealing photo** based on quality, composition, and cat-related content
 3. **Falls back to AI generation** using Azure OpenAI DALL-E if no suitable photos are found
-4. **Posts to social media** via the Postly API with automated captions
+4. **Generates witty captions** using GPT-4, tailored to the day, season, holidays, and photo content
+5. **Posts to social media** via the Postly API with AI-generated captions that reflect Milo's grumpy personality
 
 The function runs daily at 10:00 AM UTC, ensuring Milo gets his daily spotlight! 🐱
 
@@ -17,6 +18,7 @@ The function runs daily at 10:00 AM UTC, ensuring Milo gets his daily spotlight!
 - **Smart Photo Selection**: Uses Azure Computer Vision to score photos based on quality, composition, and relevance
 - **AI-Powered Appearance Analysis**: Uses GPT-4 Vision to analyze actual Milo photos and extract detailed visual characteristics
 - **Mood-Based AI Generation**: When no suitable photos are found, DALL-E 3 generates images of Milo with random moods (happy, playful, sleepy, curious, gloomy, angry, regal, cozy) based on his actual appearance
+- **Context-Aware Caption Generation**: AI-generated witty captions that adapt to day of week, season, holidays, and photo content, reflecting Milo's grumpy personality
 - **Automated Posting**: Seamless integration with Postly API for social media management
 - **Comprehensive Logging**: Detailed logging for monitoring and debugging
 - **Configurable**: Flexible settings for storage containers, scoring parameters, and scheduling
@@ -346,13 +348,35 @@ If no suitable photo is found in blob storage:
 
 **Why this works:** While DALL-E 3 can't directly see photos, GPT-4 Vision can. By using GPT-4 Vision as a "bridge" to describe Milo's appearance, we ensure DALL-E 3 generates images that match how Milo really looks.
 
+### Caption Generation
+
+Captions are dynamically generated using AI to keep content fresh and engaging:
+
+1. **Context Collection**: Gathers current temporal context including:
+   - Day of week (Monday through Sunday)
+   - Season (winter, spring, summer, fall for Northern Hemisphere)
+   - Notable holidays (New Year's Day, Valentine's Day, St. Patrick's Day, April Fool's Day, Halloween, Thanksgiving, Christmas, New Year's Eve)
+
+2. **Image Analysis**: Uses Computer Vision description of the selected photo (when available)
+
+3. **AI Caption Generation**: Uses Azure OpenAI GPT-4 to create:
+   - Short, witty captions (max 15 words)
+   - Grumpy but lovable personality matching Milo's character
+   - Context-aware references to day, season, or holidays
+   - Fallback captions if API is unavailable
+
+4. **Caption Format**:
+   - Prefix: "Daily Milo! 😾" (grumpy cat emoji)
+   - Middle: AI-generated witty caption
+   - Suffix: "#Milo #Cats #GrumpyCat"
+   - Example: "Daily Milo! 😾 Another Monday means another judgmental stare. #Milo #Cats #GrumpyCat"
+
 ### Postly Integration
 
 The selected or generated image is posted via the Postly API:
 1. Image is uploaded to Postly's media endpoint
-2. A post is created with the media and caption
+2. A post is created with the media and AI-generated caption
 3. Post is published immediately
-4. Caption format: "Daily Milo! 🐱 #YYYYMMDD #Milo #CatsOfInstagram"
 
 ## Cost Optimization Tips
 
