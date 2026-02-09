@@ -1,0 +1,7 @@
+azure-functions
+azure-storage-blob
+azure-cognitiveservices-vision-computervision
+openai
+requests
+Pillow
+msrest
