@@ -12,7 +12,7 @@ from typing import Optional, Dict, Any, List, Tuple
 import base64
 
 import azure.functions as func
-from azure.storage.blob import BlobServiceClient, BlobProperties
+from azure.storage.blob import BlobServiceClient, BlobProperties, generate_blob_sas, BlobSasPermissions
 from azure.cognitiveservices.vision.computervision import ComputerVisionClient
 from azure.cognitiveservices.vision.computervision.models import VisualFeatureTypes
 from msrest.authentication import CognitiveServicesCredentials
@@ -34,6 +34,10 @@ POSTLY_API_KEY = os.environ.get("POSTLY_API_KEY")
 POSTLY_WORKSPACE_ID = os.environ.get("POSTLY_WORKSPACE_ID")
 DAYS_TO_CHECK = int(os.environ.get("DAYS_TO_CHECK", "7"))
 
+# Constants
+SUPPORTED_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
+MIN_ACCEPTABLE_SCORE = 30  # Minimum photo appeal score to accept (0-100 scale)
+
 
 def get_recent_blobs(container_client, days: int) -> List[BlobProperties]:
     """
@@ -53,7 +57,7 @@ def get_recent_blobs(container_client, days: int) -> List[BlobProperties]:
         for blob in container_client.list_blobs():
             if blob.last_modified.replace(tzinfo=None) >= cutoff_date:
                 # Only include image files
-                if blob.name.lower().endswith(('.jpg', '.jpeg', '.png', '.gif', '.bmp')):
+                if blob.name.lower().endswith(SUPPORTED_IMAGE_EXTENSIONS):
                     recent_blobs.append(blob)
     except Exception as e:
         logging.error(f"Error listing blobs: {str(e)}")
@@ -171,9 +175,19 @@ def select_best_photo(blob_service_client: BlobServiceClient,
         
         for blob in recent_blobs:
             try:
-                # Get blob URL with SAS token for analysis
+                # Get blob client and generate SAS URL for Computer Vision API access
                 blob_client = container_client.get_blob_client(blob.name)
-                blob_url = blob_client.url
+                
+                # Generate SAS token for temporary read access (1 hour)
+                sas_token = generate_blob_sas(
+                    account_name=blob_service_client.account_name,
+                    container_name=container_name,
+                    blob_name=blob.name,
+                    account_key=blob_service_client.credential.account_key,
+                    permission=BlobSasPermissions(read=True),
+                    expiry=datetime.utcnow() + timedelta(hours=1)
+                )
+                blob_url = f"{blob_client.url}?{sas_token}"
                 
                 # Analyze the image
                 logging.info(f"Analyzing blob: {blob.name}")
@@ -191,13 +205,13 @@ def select_best_photo(blob_service_client: BlobServiceClient,
                 logging.warning(f"Error processing blob {blob.name}: {str(e)}")
                 continue
         
-        if best_blob and best_score > 30:  # Minimum acceptable score
+        if best_blob and best_score > MIN_ACCEPTABLE_SCORE:
             logging.info(f"Selected blob: {best_blob.name} with score {best_score:.2f}")
             blob_client = container_client.get_blob_client(best_blob.name)
             image_data = blob_client.download_blob().readall()
             return (image_data, best_blob.name)
         else:
-            logging.info("No photo met the minimum quality threshold")
+            logging.info(f"No photo met the minimum quality threshold ({MIN_ACCEPTABLE_SCORE})")
             return None
             
     except Exception as e:
@@ -314,7 +328,11 @@ def post_to_postly(api_key: str, workspace_id: str,
         return False
 
 
-@app.timer_trigger(schedule="0 0 10 * * *", arg_name="timer", run_on_startup=False)
+@app.timer_trigger(
+    schedule="0 0 10 * * *",  # Cron: sec min hour day month day-of-week (10:00 AM UTC daily)
+    arg_name="timer", 
+    run_on_startup=False
+)
 def daily_milo_post(timer: func.TimerRequest) -> None:
     """
     Azure Function triggered daily at 10:00 AM UTC to post a Milo photo.
