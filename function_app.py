@@ -7,6 +7,7 @@ import os
 import logging
 import io
 import json
+import random
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple
 import base64
@@ -219,9 +220,74 @@ def select_best_photo(blob_service_client: BlobServiceClient,
         return None
 
 
+def select_mood_and_prompt() -> Tuple[str, str]:
+    """
+    Randomly select a mood and generate a corresponding prompt for Milo's AI image.
+    
+    Returns:
+        Tuple of (mood, prompt) for image generation
+    """
+    moods = {
+        "happy": (
+            "A high-quality, professional photo of Milo, an adorable cat, looking happy and content. "
+            "Milo has a cheerful expression with bright eyes and relaxed posture. "
+            "The photo captures Milo in a joyful moment, perhaps with a slight smile or playful demeanor. "
+            "Natural lighting, sharp focus, photorealistic style."
+        ),
+        "playful": (
+            "A high-quality, professional photo of Milo, an adorable cat, in a playful mood. "
+            "Milo is captured mid-play, showing energetic and spirited behavior. "
+            "Perhaps Milo is batting at a toy, pouncing, or in a playful stance with alert, mischievous eyes. "
+            "Natural lighting, action captured with sharp focus, photorealistic style."
+        ),
+        "sleepy": (
+            "A high-quality, professional photo of Milo, an adorable cat, looking sleepy and relaxed. "
+            "Milo is resting peacefully, maybe with half-closed eyes or curled up in a cozy position. "
+            "The photo captures a serene, drowsy moment showing Milo's calm and tranquil side. "
+            "Soft, warm lighting, sharp focus, photorealistic style."
+        ),
+        "curious": (
+            "A high-quality, professional photo of Milo, an adorable cat, looking curious and inquisitive. "
+            "Milo has wide, attentive eyes and alert ears, focused on something interesting. "
+            "The photo captures Milo's natural curiosity and intelligence, with an engaged expression. "
+            "Natural lighting, sharp focus, photorealistic style."
+        ),
+        "gloomy": (
+            "A high-quality, professional photo of Milo, an adorable cat, in a contemplative or gloomy mood. "
+            "Milo has a slightly melancholic expression, perhaps gazing wistfully out a window or looking downcast. "
+            "The photo captures a moody, pensive moment with softer, muted tones. "
+            "Overcast or dim lighting, sharp focus, photorealistic style."
+        ),
+        "angry": (
+            "A high-quality, professional photo of Milo, an adorable cat, looking grumpy or mildly irritated. "
+            "Milo has a stern expression with narrowed eyes or flattened ears, showing feline attitude. "
+            "The photo captures Milo's feisty personality in a humorous, endearing way. "
+            "Natural lighting, sharp focus, photorealistic style."
+        ),
+        "regal": (
+            "A high-quality, professional photo of Milo, an adorable cat, in a regal and majestic pose. "
+            "Milo sits with perfect posture, looking dignified and noble like royalty. "
+            "The photo captures Milo's elegant and sophisticated side with a commanding presence. "
+            "Dramatic lighting, sharp focus, photorealistic style."
+        ),
+        "cozy": (
+            "A high-quality, professional photo of Milo, an adorable cat, in a cozy and comfortable setting. "
+            "Milo is nestled in a warm spot, perhaps on a soft blanket or cushion, looking perfectly content. "
+            "The photo captures a heartwarming moment of domestic bliss and comfort. "
+            "Warm, inviting lighting, sharp focus, photorealistic style."
+        )
+    }
+    
+    mood = random.choice(list(moods.keys()))
+    prompt = moods[mood]
+    
+    return mood, prompt
+
+
 def generate_ai_image(client: AzureOpenAI, deployment_name: str) -> Optional[bytes]:
     """
     Generate an AI image of Milo using Azure OpenAI DALL-E.
+    Uses mood-based prompts to create varied and personalized images of Milo.
     
     Args:
         client: Azure OpenAI client
@@ -231,13 +297,10 @@ def generate_ai_image(client: AzureOpenAI, deployment_name: str) -> Optional[byt
         Image bytes or None if generation failed
     """
     try:
-        prompt = (
-            "A high-quality, adorable photo of a cat named Milo. "
-            "The cat should look happy and photogenic. "
-            "Professional photography style, good lighting, sharp focus."
-        )
+        # Select a random mood and get corresponding prompt
+        mood, prompt = select_mood_and_prompt()
         
-        logging.info("Generating AI image with DALL-E")
+        logging.info(f"Generating AI image with DALL-E using '{mood}' mood")
         response = client.images.generate(
             model=deployment_name,
             prompt=prompt,
@@ -252,7 +315,7 @@ def generate_ai_image(client: AzureOpenAI, deployment_name: str) -> Optional[byt
         image_response = requests.get(image_url)
         image_response.raise_for_status()
         
-        logging.info("AI image generated successfully")
+        logging.info(f"AI image generated successfully with '{mood}' mood")
         return image_response.content
         
     except Exception as e:
