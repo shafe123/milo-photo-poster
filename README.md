@@ -142,6 +142,7 @@ az functionapp config appsettings set \
     OPENAI_GPT4V_DEPLOYMENT_NAME="gpt-4o" \
     POSTLY_API_KEY="<your-postly-api-key>" \
     POSTLY_WORKSPACE_ID="<your-postly-workspace-id>" \
+    POSTLY_TARGET_PLATFORMS="<account-id-1>,<account-id-2>" \
     DAYS_TO_CHECK="1"
 ```
 
@@ -373,10 +374,23 @@ Captions are dynamically generated using AI to keep content fresh and engaging:
 
 ### Postly Integration
 
-The selected or generated image is posted via the Postly API:
-1. Image is uploaded to Postly's media endpoint
-2. A post is created with the media and AI-generated caption
-3. Post is published immediately
+The selected or generated image is posted via the Postly API using a two-step process:
+
+1. **Upload Image**: The image is uploaded to Postly's `/files` endpoint, which returns a URL
+2. **Create Post**: A post is created using the uploaded image URL, caption, and target platform accounts
+3. **Publish**: The post is published to the specified social media platforms
+
+#### Getting Postly Target Platform IDs
+
+The `POSTLY_TARGET_PLATFORMS` environment variable should contain comma-separated account IDs for the social media accounts you want to post to. To get these IDs:
+
+1. Log in to your Postly account
+2. Navigate to your workspace settings
+3. Find the connected social media accounts
+4. Copy the account IDs for the platforms you want to post to
+5. Set them as a comma-separated list: `account-id-1,account-id-2,account-id-3`
+
+**Note**: If `POSTLY_TARGET_PLATFORMS` is not set, the post will be created in the workspace but may not be automatically published to specific platforms. Consult the [Postly API documentation](https://docs.postly.ai/) for more details on managing target platforms.
 
 ## Cost Optimization Tips
 
