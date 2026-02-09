@@ -319,7 +319,7 @@ def extract_milo_characteristics(blob_service_client: BlobServiceClient,
         description = response.choices[0].message.content.strip()
         
         # Clean up the description if needed
-        if not description.startswith("a "):
+        if not description.startswith("a ") and not description.startswith("an "):
             description = f"an adorable {description}"
         
         logging.info(f"GPT-4 Vision extracted Milo's characteristics: {description}")
