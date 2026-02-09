@@ -504,7 +504,17 @@ def get_current_context() -> Dict[str, Any]:
     
     # Thanksgiving (4th Thursday of November)
     if month == 11:
-        fourth_thursday = 22 + (3 - calendar.monthrange(now.year, 11)[0] + 1) % 7
+        # Find the first day of November
+        first_day_weekday = calendar.monthrange(now.year, 11)[0]  # 0 = Monday, 6 = Sunday
+        
+        # Thursday is weekday 3
+        # Calculate the date of the first Thursday
+        days_until_thursday = (3 - first_day_weekday) % 7
+        first_thursday = 1 + days_until_thursday
+        
+        # 4th Thursday is 3 weeks (21 days) after the first Thursday
+        fourth_thursday = first_thursday + 21
+        
         if now.day == fourth_thursday:
             holidays.append("Thanksgiving")
     
@@ -581,7 +591,7 @@ Return ONLY the caption text, nothing else."""
                 }
             ],
             max_tokens=100,
-            temperature=0.9  # Higher temperature for more creative/varied responses
+            temperature=0.8  # Balanced creativity for varied but controlled captions
         )
         
         caption = response.choices[0].message.content.strip()
