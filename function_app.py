@@ -41,6 +41,12 @@ DAYS_TO_CHECK = int(os.environ.get("DAYS_TO_CHECK", "7"))
 SUPPORTED_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
 MIN_ACCEPTABLE_SCORE = 30  # Minimum photo appeal score to accept (0-100 scale)
 
+# Caption generation constants
+CAPTION_PREFIX = "Daily Milo! 😾"  # Grumpy cat emoji to match Milo's personality
+CAPTION_HASHTAGS = "#Milo #Cats #GrumpyCat"
+CAPTION_MAX_TOKENS = 100  # Maximum tokens for GPT caption generation
+CAPTION_TEMPERATURE = 0.8  # Temperature for caption creativity (0.0-1.0)
+
 
 def get_recent_blobs(container_client, days: int) -> List[BlobProperties]:
     """
@@ -590,8 +596,8 @@ Return ONLY the caption text, nothing else."""
                     "content": prompt
                 }
             ],
-            max_tokens=100,
-            temperature=0.8  # Balanced creativity for varied but controlled captions
+            max_tokens=CAPTION_MAX_TOKENS,
+            temperature=CAPTION_TEMPERATURE
         )
         
         caption = response.choices[0].message.content.strip()
@@ -767,7 +773,7 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
         )
         
         # Format caption: "Daily Milo! 😾" + witty caption + hashtags
-        caption = f"Daily Milo! 😾 {witty_caption} #Milo #Cats #GrumpyCat"
+        caption = f"{CAPTION_PREFIX} {witty_caption} {CAPTION_HASHTAGS}"
         
         logging.info(f"Final caption: {caption}")
         
