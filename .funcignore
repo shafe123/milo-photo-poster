@@ -1,0 +1,14 @@
+.git*
+.vscode
+.venv
+__pycache__
+*.pyc
+*.pyo
+*.pyd
+.env
+.pytest_cache
+tests/
+.Python
+local.settings.json
+.funcignore
+README.md
