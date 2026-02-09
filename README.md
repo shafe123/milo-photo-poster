@@ -15,7 +15,7 @@ The function runs daily at 10:00 AM UTC, ensuring Milo gets his daily spotlight!
 ## Features
 
 - **Smart Photo Selection**: Uses Azure Computer Vision to score photos based on quality, composition, and relevance
-- **AI Fallback**: Generates professional-looking cat photos using DALL-E when needed
+- **Mood-Based AI Generation**: When no suitable photos are found, generates personalized images of Milo with random moods (happy, playful, sleepy, curious, gloomy, angry, regal, cozy)
 - **Automated Posting**: Seamless integration with Postly API for social media management
 - **Comprehensive Logging**: Detailed logging for monitoring and debugging
 - **Configurable**: Flexible settings for storage containers, scoring parameters, and scheduling
@@ -320,9 +320,11 @@ The function uses a sophisticated scoring system to select the best photo:
 ### AI Fallback
 
 If no suitable photo is found in blob storage:
-- Uses Azure OpenAI DALL-E 3 to generate a professional cat photo
-- Prompt emphasizes high quality, good lighting, and photogenic appearance
-- Generated in 1024x1024 HD quality with natural style
+- Uses Azure OpenAI DALL-E 3 to generate a personalized photo of Milo
+- Randomly selects from 8 different moods: happy, playful, sleepy, curious, gloomy, angry, regal, or cozy
+- Each mood has a custom prompt that captures Milo's personality and the specific mood
+- Generated in 1024x1024 HD quality with natural, photorealistic style
+- Logs the selected mood for each generation
 
 ### Postly Integration
 
