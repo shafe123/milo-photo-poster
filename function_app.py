@@ -7,6 +7,7 @@ import os
 import logging
 import io
 import json
+import random
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple
 import base64
@@ -30,6 +31,7 @@ COMPUTER_VISION_KEY = os.environ.get("COMPUTER_VISION_KEY")
 OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
 OPENAI_ENDPOINT = os.environ.get("OPENAI_ENDPOINT")
 OPENAI_DEPLOYMENT_NAME = os.environ.get("OPENAI_DEPLOYMENT_NAME", "dall-e-3")
+OPENAI_GPT4V_DEPLOYMENT_NAME = os.environ.get("OPENAI_GPT4V_DEPLOYMENT_NAME", "gpt-4o")  # GPT-4 Vision deployment
 POSTLY_API_KEY = os.environ.get("POSTLY_API_KEY")
 POSTLY_WORKSPACE_ID = os.environ.get("POSTLY_WORKSPACE_ID")
 DAYS_TO_CHECK = int(os.environ.get("DAYS_TO_CHECK", "7"))
@@ -219,25 +221,215 @@ def select_best_photo(blob_service_client: BlobServiceClient,
         return None
 
 
-def generate_ai_image(client: AzureOpenAI, deployment_name: str) -> Optional[bytes]:
+def extract_milo_characteristics(blob_service_client: BlobServiceClient,
+                                openai_client: AzureOpenAI,
+                                gpt4v_deployment: str,
+                                container_name: str) -> str:
+    """
+    Analyze existing Milo photos using GPT-4 Vision to extract detailed visual characteristics.
+    
+    Args:
+        blob_service_client: Azure Blob Storage client
+        openai_client: Azure OpenAI client (for GPT-4 Vision)
+        gpt4v_deployment: Name of the GPT-4 Vision deployment
+        container_name: Name of the blob container
+        
+    Returns:
+        String description of Milo's visual characteristics from GPT-4 Vision
+    """
+    try:
+        container_client = blob_service_client.get_container_client(container_name)
+        # Get recent photos (last 30 days for a good sample)
+        recent_blobs = get_recent_blobs(container_client, days=30)
+        
+        if not recent_blobs:
+            logging.info("No photos found to analyze Milo's characteristics, using default description")
+            return "an adorable cat"
+        
+        # Analyze up to 3 recent photos with GPT-4 Vision
+        max_to_analyze = min(3, len(recent_blobs))
+        image_urls = []
+        
+        for blob in recent_blobs[:max_to_analyze]:
+            try:
+                blob_client = container_client.get_blob_client(blob.name)
+                
+                # Generate SAS token for temporary read access (1 hour)
+                sas_token = generate_blob_sas(
+                    account_name=blob_service_client.account_name,
+                    container_name=container_name,
+                    blob_name=blob.name,
+                    account_key=blob_service_client.credential.account_key,
+                    permission=BlobSasPermissions(read=True),
+                    expiry=datetime.utcnow() + timedelta(hours=1)
+                )
+                blob_url = f"{blob_client.url}?{sas_token}"
+                image_urls.append(blob_url)
+                
+            except Exception as e:
+                logging.warning(f"Error preparing blob {blob.name} for GPT-4 Vision: {str(e)}")
+                continue
+        
+        if not image_urls:
+            logging.info("Could not prepare any photos for analysis, using default description")
+            return "an adorable cat"
+        
+        # Build GPT-4 Vision message with multiple images
+        content = [
+            {
+                "type": "text",
+                "text": (
+                    "You are analyzing photos of a cat named Milo. "
+                    "Please provide a detailed physical description of this cat that could be used "
+                    "to generate similar images. Focus on: fur color and pattern (e.g., orange tabby with "
+                    "dark stripes, calico, solid gray, etc.), fur length, eye color, distinctive markings, "
+                    "body type, and any unique features. "
+                    "Be specific and detailed, but concise (2-3 sentences max). "
+                    "Format your response as: 'a [description] cat' (e.g., 'a fluffy orange tabby cat "
+                    "with white paws and green eyes')."
+                )
+            }
+        ]
+        
+        # Add up to 3 images to the request
+        for url in image_urls[:3]:
+            content.append({
+                "type": "image_url",
+                "image_url": {"url": url}
+            })
+        
+        logging.info(f"Analyzing {len(image_urls)} photos with GPT-4 Vision to extract Milo's characteristics")
+        
+        # Call GPT-4 Vision
+        response = openai_client.chat.completions.create(
+            model=gpt4v_deployment,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert at analyzing and describing cat appearances for image generation."
+                },
+                {
+                    "role": "user",
+                    "content": content
+                }
+            ],
+            max_tokens=300
+        )
+        
+        description = response.choices[0].message.content.strip()
+        
+        # Clean up the description if needed
+        if not description.startswith("a ") and not description.startswith("an "):
+            description = f"an adorable {description}"
+        
+        logging.info(f"GPT-4 Vision extracted Milo's characteristics: {description}")
+        return description
+        
+    except Exception as e:
+        logging.error(f"Error extracting Milo's characteristics with GPT-4 Vision: {str(e)}")
+        return "an adorable cat"
+
+
+def select_mood_and_prompt(milo_description: str = "an adorable cat") -> Tuple[str, str]:
+    """
+    Randomly select a mood and generate a corresponding prompt for Milo's AI image.
+    
+    Args:
+        milo_description: Visual description of Milo's appearance (from photo analysis)
+    
+    Returns:
+        Tuple of (mood, prompt) for image generation
+    """
+    moods = {
+        "happy": (
+            f"A high-quality, professional photo of Milo, {milo_description}, looking happy and content. "
+            "Milo has a cheerful expression with bright eyes and relaxed posture. "
+            "The photo captures Milo in a joyful moment, perhaps with a slight smile or playful demeanor. "
+            "Natural lighting, sharp focus, photorealistic style."
+        ),
+        "playful": (
+            f"A high-quality, professional photo of Milo, {milo_description}, in a playful mood. "
+            "Milo is captured mid-play, showing energetic and spirited behavior. "
+            "Perhaps Milo is batting at a toy, pouncing, or in a playful stance with alert, mischievous eyes. "
+            "Natural lighting, action captured with sharp focus, photorealistic style."
+        ),
+        "sleepy": (
+            f"A high-quality, professional photo of Milo, {milo_description}, looking sleepy and relaxed. "
+            "Milo is resting peacefully, maybe with half-closed eyes or curled up in a cozy position. "
+            "The photo captures a serene, drowsy moment showing Milo's calm and tranquil side. "
+            "Soft, warm lighting, sharp focus, photorealistic style."
+        ),
+        "curious": (
+            f"A high-quality, professional photo of Milo, {milo_description}, looking curious and inquisitive. "
+            "Milo has wide, attentive eyes and alert ears, focused on something interesting. "
+            "The photo captures Milo's natural curiosity and intelligence, with an engaged expression. "
+            "Natural lighting, sharp focus, photorealistic style."
+        ),
+        "gloomy": (
+            f"A high-quality, professional photo of Milo, {milo_description}, in a contemplative or gloomy mood. "
+            "Milo has a slightly melancholic expression, perhaps gazing wistfully out a window or looking downcast. "
+            "The photo captures a moody, pensive moment with softer, muted tones. "
+            "Overcast or dim lighting, sharp focus, photorealistic style."
+        ),
+        "angry": (
+            f"A high-quality, professional photo of Milo, {milo_description}, looking grumpy or mildly irritated. "
+            "Milo has a stern expression with narrowed eyes or flattened ears, showing feline attitude. "
+            "The photo captures Milo's feisty personality in a humorous, endearing way. "
+            "Natural lighting, sharp focus, photorealistic style."
+        ),
+        "regal": (
+            f"A high-quality, professional photo of Milo, {milo_description}, in a regal and majestic pose. "
+            "Milo sits with perfect posture, looking dignified and noble like royalty. "
+            "The photo captures Milo's elegant and sophisticated side with a commanding presence. "
+            "Dramatic lighting, sharp focus, photorealistic style."
+        ),
+        "cozy": (
+            f"A high-quality, professional photo of Milo, {milo_description}, in a cozy and comfortable setting. "
+            "Milo is nestled in a warm spot, perhaps on a soft blanket or cushion, looking perfectly content. "
+            "The photo captures a heartwarming moment of domestic bliss and comfort. "
+            "Warm, inviting lighting, sharp focus, photorealistic style."
+        )
+    }
+    
+    mood = random.choice(list(moods.keys()))
+    prompt = moods[mood]
+    
+    return mood, prompt
+
+
+def generate_ai_image(client: AzureOpenAI, deployment_name: str,
+                      gpt4v_deployment: str = None,
+                      blob_service_client: BlobServiceClient = None,
+                      container_name: str = None) -> Optional[bytes]:
     """
     Generate an AI image of Milo using Azure OpenAI DALL-E.
+    Uses mood-based prompts to create varied and personalized images of Milo.
+    If blob storage client and GPT-4 Vision deployment are provided, analyzes existing
+    photos using GPT-4 Vision to extract Milo's visual characteristics for accurate generation.
     
     Args:
         client: Azure OpenAI client
         deployment_name: Name of the DALL-E deployment
+        gpt4v_deployment: Optional GPT-4 Vision deployment name for analyzing photos
+        blob_service_client: Optional Azure Blob Storage client for accessing existing photos
+        container_name: Optional container name where Milo's photos are stored
         
     Returns:
         Image bytes or None if generation failed
     """
     try:
-        prompt = (
-            "A high-quality, adorable photo of a cat named Milo. "
-            "The cat should look happy and photogenic. "
-            "Professional photography style, good lighting, sharp focus."
-        )
+        # Extract Milo's characteristics from existing photos using GPT-4 Vision
+        milo_description = "an adorable cat"
+        if blob_service_client and gpt4v_deployment and container_name:
+            milo_description = extract_milo_characteristics(
+                blob_service_client, client, gpt4v_deployment, container_name
+            )
         
-        logging.info("Generating AI image with DALL-E")
+        # Select a random mood and get corresponding prompt with Milo's characteristics
+        mood, prompt = select_mood_and_prompt(milo_description)
+        
+        logging.info(f"Generating AI image with DALL-E using '{mood}' mood")
+        logging.info(f"Milo's appearance: {milo_description}")
         response = client.images.generate(
             model=deployment_name,
             prompt=prompt,
@@ -252,7 +444,7 @@ def generate_ai_image(client: AzureOpenAI, deployment_name: str) -> Optional[byt
         image_response = requests.get(image_url)
         image_response.raise_for_status()
         
-        logging.info("AI image generated successfully")
+        logging.info(f"AI image generated successfully with '{mood}' mood")
         return image_response.content
         
     except Exception as e:
@@ -381,7 +573,14 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
                 azure_endpoint=OPENAI_ENDPOINT
             )
             
-            image_data = generate_ai_image(openai_client, OPENAI_DEPLOYMENT_NAME)
+            # Pass blob service client and GPT-4 Vision deployment to extract Milo's characteristics
+            image_data = generate_ai_image(
+                openai_client, 
+                OPENAI_DEPLOYMENT_NAME,
+                gpt4v_deployment=OPENAI_GPT4V_DEPLOYMENT_NAME,
+                blob_service_client=blob_service_client,
+                container_name=BLOB_CONTAINER_NAME
+            )
             image_source = "AI generated (DALL-E)"
         
         if not image_data:
