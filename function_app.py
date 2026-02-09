@@ -11,6 +11,7 @@ import random
 from datetime import datetime, timedelta
 from typing import Optional, Dict, Any, List, Tuple
 import base64
+import calendar
 
 import azure.functions as func
 from azure.storage.blob import BlobServiceClient, BlobProperties, generate_blob_sas, BlobSasPermissions
@@ -39,6 +40,12 @@ DAYS_TO_CHECK = int(os.environ.get("DAYS_TO_CHECK", "7"))
 # Constants
 SUPPORTED_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
 MIN_ACCEPTABLE_SCORE = 30  # Minimum photo appeal score to accept (0-100 scale)
+
+# Caption generation constants
+CAPTION_PREFIX = "Daily Milo! 😾"  # Grumpy cat emoji to match Milo's personality
+CAPTION_HASHTAGS = "#Milo #Cats #GrumpyCat"
+CAPTION_MAX_TOKENS = 100  # Maximum tokens for GPT caption generation
+CAPTION_TEMPERATURE = 0.8  # Temperature for caption creativity (0.0-1.0)
 
 
 def get_recent_blobs(container_client, days: int) -> List[BlobProperties]:
@@ -151,7 +158,7 @@ def calculate_appeal_score(analysis: Dict[str, Any]) -> float:
 def select_best_photo(blob_service_client: BlobServiceClient, 
                      cv_client: ComputerVisionClient,
                      container_name: str,
-                     days: int) -> Optional[Tuple[bytes, str]]:
+                     days: int) -> Optional[Tuple[bytes, str, str]]:
     """
     Select the best photo from blob storage based on appeal score.
     
@@ -162,7 +169,7 @@ def select_best_photo(blob_service_client: BlobServiceClient,
         days: Number of days to look back
         
     Returns:
-        Tuple of (image_bytes, blob_name) or None if no suitable photo found
+        Tuple of (image_bytes, blob_name, description) or None if no suitable photo found
     """
     try:
         container_client = blob_service_client.get_container_client(container_name)
@@ -174,6 +181,7 @@ def select_best_photo(blob_service_client: BlobServiceClient,
         
         best_blob = None
         best_score = -1
+        best_analysis = None
         
         for blob in recent_blobs:
             try:
@@ -202,6 +210,7 @@ def select_best_photo(blob_service_client: BlobServiceClient,
                 if score > best_score:
                     best_score = score
                     best_blob = blob
+                    best_analysis = analysis
                     
             except Exception as e:
                 logging.warning(f"Error processing blob {blob.name}: {str(e)}")
@@ -211,7 +220,8 @@ def select_best_photo(blob_service_client: BlobServiceClient,
             logging.info(f"Selected blob: {best_blob.name} with score {best_score:.2f}")
             blob_client = container_client.get_blob_client(best_blob.name)
             image_data = blob_client.download_blob().readall()
-            return (image_data, best_blob.name)
+            description = best_analysis.get('description', '') if best_analysis else ''
+            return (image_data, best_blob.name, description)
         else:
             logging.info(f"No photo met the minimum quality threshold ({MIN_ACCEPTABLE_SCORE})")
             return None
@@ -452,6 +462,168 @@ def generate_ai_image(client: AzureOpenAI, deployment_name: str,
         return None
 
 
+def get_current_context() -> Dict[str, Any]:
+    """
+    Get current temporal context including day of week, season, and notable dates.
+    
+    Returns:
+        Dictionary containing contextual information
+    """
+    now = datetime.utcnow()
+    
+    # Day of week
+    day_name = calendar.day_name[now.weekday()]
+    
+    # Season (Northern Hemisphere)
+    month = now.month
+    if month in [12, 1, 2]:
+        season = "winter"
+    elif month in [3, 4, 5]:
+        season = "spring"
+    elif month in [6, 7, 8]:
+        season = "summer"
+    else:
+        season = "fall"
+    
+    # Check for notable holidays/dates
+    holidays = []
+    
+    # New Year's
+    if month == 1 and now.day == 1:
+        holidays.append("New Year's Day")
+    
+    # Valentine's Day
+    if month == 2 and now.day == 14:
+        holidays.append("Valentine's Day")
+    
+    # St. Patrick's Day
+    if month == 3 and now.day == 17:
+        holidays.append("St. Patrick's Day")
+    
+    # April Fool's Day
+    if month == 4 and now.day == 1:
+        holidays.append("April Fool's Day")
+    
+    # Halloween
+    if month == 10 and now.day == 31:
+        holidays.append("Halloween")
+    
+    # Thanksgiving (4th Thursday of November)
+    if month == 11:
+        # Find the first day of November
+        first_day_weekday = calendar.monthrange(now.year, 11)[0]  # 0 = Monday, 6 = Sunday
+        
+        # Thursday is weekday 3
+        # Calculate the date of the first Thursday
+        days_until_thursday = (3 - first_day_weekday) % 7
+        first_thursday = 1 + days_until_thursday
+        
+        # 4th Thursday is 3 weeks (21 days) after the first Thursday
+        fourth_thursday = first_thursday + 21
+        
+        if now.day == fourth_thursday:
+            holidays.append("Thanksgiving")
+    
+    # Christmas
+    if month == 12 and now.day == 25:
+        holidays.append("Christmas")
+    
+    # New Year's Eve
+    if month == 12 and now.day == 31:
+        holidays.append("New Year's Eve")
+    
+    return {
+        "day_of_week": day_name,
+        "season": season,
+        "holidays": holidays,
+        "date": now.strftime("%B %d, %Y")
+    }
+
+
+def generate_witty_caption(openai_client: AzureOpenAI, 
+                          gpt_deployment: str,
+                          context: Dict[str, Any],
+                          image_description: str = "") -> str:
+    """
+    Generate a witty, socially engaging caption using AI based on context and image content.
+    
+    Args:
+        openai_client: Azure OpenAI client
+        gpt_deployment: Name of the GPT deployment to use
+        context: Contextual information (day of week, season, holidays)
+        image_description: Optional description of the image content
+        
+    Returns:
+        A witty caption string
+    """
+    try:
+        # Build context string
+        context_parts = [f"It's {context['day_of_week']}"]
+        context_parts.append(f"in {context['season']}")
+        
+        if context['holidays']:
+            context_parts.append(f"and it's {', '.join(context['holidays'])}")
+        
+        context_str = ", ".join(context_parts) + "."
+        
+        # Build prompt
+        prompt = f"""You are a witty social media caption writer for Milo, a grumpy but lovable cat with a sassy personality.
+
+Context: {context_str}
+
+{"Image description: " + image_description if image_description else ""}
+
+Generate a SHORT, witty, and engaging caption (maximum 15 words) that:
+- Reflects Milo's grumpy yet endearing personality
+- References the day/season/holiday if relevant in a clever way
+- Is funny and relatable to cat lovers
+- Avoids hashtags (they'll be added separately)
+- Uses a conversational tone that cats might use if they could talk
+
+Return ONLY the caption text, nothing else."""
+
+        logging.info(f"Generating witty caption with context: {context_str}")
+        
+        response = openai_client.chat.completions.create(
+            model=gpt_deployment,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are a creative social media caption writer specializing in humorous cat content."
+                },
+                {
+                    "role": "user",
+                    "content": prompt
+                }
+            ],
+            max_tokens=CAPTION_MAX_TOKENS,
+            temperature=CAPTION_TEMPERATURE
+        )
+        
+        caption = response.choices[0].message.content.strip()
+        
+        # Clean up the caption - remove quotes if present
+        if caption.startswith('"') and caption.endswith('"'):
+            caption = caption[1:-1]
+        if caption.startswith("'") and caption.endswith("'"):
+            caption = caption[1:-1]
+        
+        logging.info(f"Generated witty caption: {caption}")
+        return caption
+        
+    except Exception as e:
+        logging.error(f"Error generating witty caption: {str(e)}")
+        # Fallback to simple captions
+        fallback_captions = [
+            "Another day, another judgmental stare.",
+            "I'm not grumpy, this is just my face.",
+            "Existing is exhausting.",
+            "Did someone say treats?",
+            "Professional napper reporting for duty."
+        ]
+        return random.choice(fallback_captions)
+
+
 def post_to_postly(api_key: str, workspace_id: str, 
                    image_data: bytes, caption: str) -> bool:
     """
@@ -543,6 +715,7 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
     
     image_data = None
     image_source = None
+    image_description = ""
     
     try:
         # Step 1: Try to select best photo from blob storage
@@ -554,6 +727,13 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
         cv_credentials = CognitiveServicesCredentials(COMPUTER_VISION_KEY)
         cv_client = ComputerVisionClient(COMPUTER_VISION_ENDPOINT, cv_credentials)
         
+        # Initialize OpenAI client (needed for both AI generation and caption)
+        openai_client = AzureOpenAI(
+            api_key=OPENAI_API_KEY,
+            api_version="2024-02-01",
+            azure_endpoint=OPENAI_ENDPOINT
+        )
+        
         result = select_best_photo(
             blob_service_client, 
             cv_client,
@@ -562,16 +742,11 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
         )
         
         if result:
-            image_data, blob_name = result
+            image_data, blob_name, image_description = result
             image_source = f"blob storage ({blob_name})"
         else:
             # Step 2: Fallback to AI generation
             logging.info("No suitable photo found, generating AI image")
-            openai_client = AzureOpenAI(
-                api_key=OPENAI_API_KEY,
-                api_version="2024-02-01",
-                azure_endpoint=OPENAI_ENDPOINT
-            )
             
             # Pass blob service client and GPT-4 Vision deployment to extract Milo's characteristics
             image_data = generate_ai_image(
@@ -582,15 +757,27 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
                 container_name=BLOB_CONTAINER_NAME
             )
             image_source = "AI generated (DALL-E)"
+            image_description = ""  # AI generated images don't have analysis
         
         if not image_data:
             logging.error("Failed to obtain image (neither from storage nor AI)")
             return
         
-        # Step 3: Post to Postly
-        today = datetime.utcnow().strftime("%Y-%m-%d")
-        caption = f"Daily Milo! 🐱 #{today.replace('-', '')} #Milo #CatsOfInstagram"
+        # Step 3: Generate witty caption
+        context = get_current_context()
+        witty_caption = generate_witty_caption(
+            openai_client,
+            OPENAI_GPT4V_DEPLOYMENT_NAME,
+            context,
+            image_description
+        )
         
+        # Format caption: "Daily Milo! 😾" + witty caption + hashtags
+        caption = f"{CAPTION_PREFIX} {witty_caption} {CAPTION_HASHTAGS}"
+        
+        logging.info(f"Final caption: {caption}")
+        
+        # Step 4: Post to Postly
         success = post_to_postly(
             POSTLY_API_KEY,
             POSTLY_WORKSPACE_ID,
