@@ -645,6 +645,7 @@ def post_to_postly(api_key: str, workspace_id: str,
         # Reference: https://docs.postly.ai/upload-a-file-17449007e0
         upload_url = "https://api.postly.ai/files"
         
+        # Both upload and post endpoints use X-API-KEY authentication
         headers = {
             "X-API-KEY": api_key,
         }
