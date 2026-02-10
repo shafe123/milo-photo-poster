@@ -35,6 +35,7 @@ OPENAI_DEPLOYMENT_NAME = os.environ.get("OPENAI_DEPLOYMENT_NAME", "dall-e-3")
 OPENAI_GPT4V_DEPLOYMENT_NAME = os.environ.get("OPENAI_GPT4V_DEPLOYMENT_NAME", "gpt-4o")  # GPT-4 Vision deployment
 POSTLY_API_KEY = os.environ.get("POSTLY_API_KEY")
 POSTLY_WORKSPACE_ID = os.environ.get("POSTLY_WORKSPACE_ID")
+POSTLY_TARGET_PLATFORMS = os.environ.get("POSTLY_TARGET_PLATFORMS")  # Comma-separated account IDs
 DAYS_TO_CHECK = int(os.environ.get("DAYS_TO_CHECK", "7"))
 
 # Constants
@@ -625,7 +626,7 @@ Return ONLY the caption text, nothing else."""
 
 
 def post_to_postly(api_key: str, workspace_id: str, 
-                   image_data: bytes, caption: str) -> bool:
+                   image_data: bytes, caption: str, target_platforms: Optional[str] = None) -> bool:
     """
     Post image to Postly API.
     
@@ -634,58 +635,75 @@ def post_to_postly(api_key: str, workspace_id: str,
         workspace_id: Postly workspace ID
         image_data: Image bytes to upload
         caption: Caption for the post
+        target_platforms: Comma-separated list of platform account IDs (optional)
         
     Returns:
         True if successful, False otherwise
     """
     try:
-        # Based on Postly API documentation
-        # First, upload the image to get a media ID
-        upload_url = "https://api.postly.ai/v1/media/upload"
+        # Step 1: Upload the file to Postly to get a URL
+        # Reference: https://docs.postly.ai/upload-a-file-17449007e0
+        upload_url = "https://api.postly.ai/files"
         
+        # Both upload and post endpoints use X-API-KEY authentication
         headers = {
-            "Authorization": f"Bearer {api_key}",
+            "X-API-KEY": api_key,
         }
         
         files = {
             "file": ("milo.jpg", image_data, "image/jpeg")
         }
         
-        data = {
-            "workspace_id": workspace_id
-        }
-        
         logging.info("Uploading image to Postly")
-        upload_response = requests.post(upload_url, headers=headers, files=files, data=data)
+        upload_response = requests.post(upload_url, headers=headers, files=files)
         upload_response.raise_for_status()
         
-        media_id = upload_response.json().get("media_id")
+        # Extract the URL from the response
+        upload_data = upload_response.json()
+        media_url = upload_data.get("data", {}).get("url")
         
-        if not media_id:
-            logging.error("No media_id returned from upload")
+        if not media_url:
+            logging.error(f"No URL returned from upload. Response: {upload_data}")
             return False
         
-        # Now create a post with the uploaded media
-        post_url = "https://api.postly.ai/v1/posts"
+        logging.info(f"Image uploaded successfully. URL: {media_url}")
+        
+        # Step 2: Create a post with the uploaded media
+        # Reference: https://docs.postly.ai/create-a-post-17486212e0
+        post_url = "https://openapi.postly.ai/v1/posts"
         
         post_data = {
-            "workspace_id": workspace_id,
-            "caption": caption,
-            "media_ids": [media_id],
-            "publish_now": True
+            "workspace": workspace_id,
+            "text": caption,
+            "media": [
+                {
+                    "url": media_url,
+                    "type": "image/jpeg"
+                }
+            ]
         }
+        
+        # Add target platforms if provided
+        if target_platforms:
+            # Split comma-separated account IDs and strip whitespace
+            platform_ids = [pid.strip() for pid in target_platforms.split(",") if pid.strip()]
+            if platform_ids:
+                post_data["target_platforms"] = platform_ids
+                logging.info(f"Targeting platforms: {platform_ids}")
         
         logging.info("Creating post on Postly")
         post_response = requests.post(post_url, headers=headers, json=post_data)
         post_response.raise_for_status()
         
-        logging.info("Successfully posted to Postly")
+        post_result = post_response.json()
+        logging.info(f"Successfully posted to Postly. Response: {post_result}")
         return True
         
     except requests.exceptions.RequestException as e:
         logging.error(f"Error posting to Postly: {str(e)}")
         if hasattr(e, 'response') and e.response is not None:
-            logging.error(f"Response: {e.response.text}")
+            logging.error(f"Response status: {e.response.status_code}")
+            logging.error(f"Response body: {e.response.text}")
         return False
     except Exception as e:
         logging.error(f"Unexpected error posting to Postly: {str(e)}")
@@ -782,7 +800,8 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
             POSTLY_API_KEY,
             POSTLY_WORKSPACE_ID,
             image_data,
-            caption
+            caption,
+            POSTLY_TARGET_PLATFORMS
         )
         
         if success:

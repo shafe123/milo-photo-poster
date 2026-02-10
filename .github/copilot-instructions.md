@@ -132,6 +132,7 @@ All configuration via environment variables (set in Azure Function App Settings 
 - `OPENAI_DEPLOYMENT_NAME` - DALL-E deployment name (default: "dall-e-3")
 - `POSTLY_API_KEY` - Postly API authentication key
 - `POSTLY_WORKSPACE_ID` - Postly workspace identifier
+- `POSTLY_TARGET_PLATFORMS` - Comma-separated list of Postly account IDs to post to (optional)
 - `DAYS_TO_CHECK` - Number of days to look back for photos (default: 7)
 
 ### Never Commit
