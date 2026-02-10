@@ -104,7 +104,11 @@ def is_blob_posted(blob_client, history_days: int) -> bool:
             return False
         
         posted_date_str = metadata[POSTED_METADATA_KEY]
+        # Parse the ISO format date and ensure it's timezone-naive for comparison
         posted_date = datetime.fromisoformat(posted_date_str)
+        if posted_date.tzinfo is not None:
+            posted_date = posted_date.replace(tzinfo=None)
+        
         cutoff_date = datetime.utcnow() - timedelta(days=history_days)
         
         return posted_date >= cutoff_date
