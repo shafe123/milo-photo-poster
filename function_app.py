@@ -43,10 +43,12 @@ POSTLY_WORKSPACE_ID = os.environ.get("POSTLY_WORKSPACE_ID")
 POSTLY_TARGET_PLATFORMS = os.environ.get("POSTLY_TARGET_PLATFORMS")  # Comma-separated account IDs
 DAYS_TO_CHECK = int(os.environ.get("DAYS_TO_CHECK", "7"))
 MAX_PHOTOS_TO_ANALYZE = int(os.environ.get("MAX_PHOTOS_TO_ANALYZE", "10"))  # Limit to avoid rate limits
+POSTED_HISTORY_DAYS = int(os.environ.get("POSTED_HISTORY_DAYS", "30"))  # Days to remember posted photos
 
 # Constants
 SUPPORTED_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
 MIN_ACCEPTABLE_SCORE = 30  # Minimum photo appeal score to accept (0-100 scale)
+POSTED_METADATA_KEY = "posted_date"  # Metadata key for tracking when a photo was posted
 
 # Caption generation constants
 CAPTION_PREFIX = "Daily Milo! 😾"  # Grumpy cat emoji to match Milo's personality
@@ -81,6 +83,53 @@ def get_recent_blobs(container_client, days: int) -> List[BlobProperties]:
     
     logging.info(f"Found {len(recent_blobs)} recent image(s) in blob storage")
     return recent_blobs
+
+
+def is_blob_posted(blob_client, history_days: int) -> bool:
+    """
+    Check if a blob has been posted recently.
+    
+    Args:
+        blob_client: Azure Blob client for the specific blob
+        history_days: Number of days to consider a photo as "recently posted"
+        
+    Returns:
+        True if blob was posted within history_days, False otherwise
+    """
+    try:
+        properties = blob_client.get_blob_properties()
+        metadata = properties.metadata
+        
+        if POSTED_METADATA_KEY not in metadata:
+            return False
+        
+        posted_date_str = metadata[POSTED_METADATA_KEY]
+        posted_date = datetime.fromisoformat(posted_date_str)
+        cutoff_date = datetime.utcnow() - timedelta(days=history_days)
+        
+        return posted_date >= cutoff_date
+    except Exception as e:
+        logging.warning(f"Error checking posted status: {str(e)}")
+        # If we can't determine, assume it hasn't been posted to be safe
+        return False
+
+
+def mark_blob_as_posted(blob_client) -> None:
+    """
+    Mark a blob as posted by setting metadata with the current timestamp.
+    
+    Args:
+        blob_client: Azure Blob client for the specific blob
+    """
+    try:
+        properties = blob_client.get_blob_properties()
+        metadata = properties.metadata or {}
+        metadata[POSTED_METADATA_KEY] = datetime.utcnow().isoformat()
+        
+        blob_client.set_blob_metadata(metadata)
+        logging.info(f"Marked blob as posted: {blob_client.blob_name}")
+    except Exception as e:
+        logging.error(f"Error marking blob as posted: {str(e)}")
 
 
 def analyze_image_quality(cv_client: ComputerVisionClient, image_url: str) -> Dict[str, Any]:
@@ -186,11 +235,24 @@ def select_best_photo(blob_service_client: BlobServiceClient,
             logging.info("No recent photos found in blob storage")
             return None
         
+        # Filter out recently posted photos to avoid duplicates
+        unposted_blobs = []
+        for blob in recent_blobs:
+            blob_client = container_client.get_blob_client(blob.name)
+            if not is_blob_posted(blob_client, POSTED_HISTORY_DAYS):
+                unposted_blobs.append(blob)
+        
+        logging.info(f"Found {len(unposted_blobs)} unposted photos out of {len(recent_blobs)} recent photos")
+        
+        if not unposted_blobs:
+            logging.info("All recent photos have already been posted")
+            return None
+        
         # Randomly sample photos to analyze (to avoid rate limits)
-        blobs_to_analyze = recent_blobs
-        if len(recent_blobs) > MAX_PHOTOS_TO_ANALYZE:
-            blobs_to_analyze = random.sample(recent_blobs, MAX_PHOTOS_TO_ANALYZE)
-            logging.info(f"Randomly selected {MAX_PHOTOS_TO_ANALYZE} photos from {len(recent_blobs)} available photos")
+        blobs_to_analyze = unposted_blobs
+        if len(unposted_blobs) > MAX_PHOTOS_TO_ANALYZE:
+            blobs_to_analyze = random.sample(unposted_blobs, MAX_PHOTOS_TO_ANALYZE)
+            logging.info(f"Randomly selected {MAX_PHOTOS_TO_ANALYZE} photos from {len(unposted_blobs)} available photos")
         
         best_blob = None
         best_score = -1
@@ -746,6 +808,7 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
     image_data = None
     image_source = None
     image_description = ""
+    blob_name = None  # Track blob name for marking as posted
     
     try:
         # Step 1: Try to select best photo from blob storage
@@ -823,6 +886,14 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
 
         if success:
             logging.info(f"Successfully posted daily Milo photo from {image_source}")
+            # Mark blob as posted to avoid duplicates
+            if blob_name:
+                try:
+                    container_client = blob_service_client.get_container_client(BLOB_CONTAINER_NAME)
+                    blob_client = container_client.get_blob_client(blob_name)
+                    mark_blob_as_posted(blob_client)
+                except Exception as e:
+                    logging.warning(f"Could not mark blob as posted: {str(e)}")
         else:
             logging.error(f"Failed to post to Postly (image source: {image_source})")
 

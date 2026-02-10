@@ -162,6 +162,7 @@ az functionapp config appsettings set \
     - `POSTLY_TARGET_PLATFORMS` - Comma-separated list of Postly account IDs to post to (optional)
     - `DAYS_TO_CHECK` - Number of days to look back for photos (default: 7)
     - `MAX_PHOTOS_TO_ANALYZE` - Maximum number of photos to analyze from recent uploads (default: 10) to avoid API rate limits
+    - `POSTED_HISTORY_DAYS` - Number of days to remember posted photos to avoid duplicates (default: 30)
     POSTLY_API_KEY="<your-postly-api-key>" \
     POSTLY_WORKSPACE_ID="<your-postly-workspace-id>" \
     POSTLY_TARGET_PLATFORMS="<account-id-1>,<account-id-2>" \
@@ -333,19 +334,20 @@ az functionapp config appsettings set \
 The function uses a sophisticated scoring system to select the best photo:
 
 1. **Recent Photos**: Scans blob storage for photos modified in the last N days (default: 7)
-2. **Computer Vision Analysis**: Each photo is analyzed for:
+2. **Duplicate Avoidance**: Filters out photos that have been posted within the last M days (default: 30) to prevent the same photo from being selected repeatedly
+3. **Computer Vision Analysis**: Each remaining photo is analyzed for:
    - Overall description and confidence
    - Tags (looking for cat-related content)
    - Adult/racy content (filtered out)
    - Image type (prefers photographs over clip art)
    - Color information
-3. **Appeal Score Calculation**:
+4. **Appeal Score Calculation**:
    - Base score from description confidence (0-30 points)
    - Bonus for cat-related tags (0-20 points)
    - Penalty for inappropriate content (-50 points)
    - Penalty for clip art or line drawings (-20/-15 points)
    - Bonus for color images (+10 points)
-4. **Selection**: Photo with highest score (minimum 30 points) is selected
+5. **Selection**: Photo with highest score (minimum 30 points) is selected
 
 ### AI Fallback
 
