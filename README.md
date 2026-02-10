@@ -161,6 +161,7 @@ az functionapp config appsettings set \
     - `POSTLY_WORKSPACE_ID` - Postly workspace identifier
     - `POSTLY_TARGET_PLATFORMS` - Comma-separated list of Postly account IDs to post to (optional)
     - `DAYS_TO_CHECK` - Number of days to look back for photos (default: 7)
+    - `MAX_PHOTOS_TO_ANALYZE` - Maximum number of photos to analyze from recent uploads (default: 10) to avoid API rate limits
     POSTLY_API_KEY="<your-postly-api-key>" \
     POSTLY_WORKSPACE_ID="<your-postly-workspace-id>" \
     POSTLY_TARGET_PLATFORMS="<account-id-1>,<account-id-2>" \
