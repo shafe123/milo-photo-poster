@@ -4,11 +4,13 @@ Tests for photo selection and limiting logic
 import sys
 import os
 import json
+import random
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timedelta
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
+import function_app
 from function_app import select_best_photo, get_recent_blobs
 
 
@@ -42,21 +44,11 @@ def test_random_sampling_when_exceeds_limit():
                 'adult': {'isAdultContent': False, 'isRacyContent': False},
                 'color': {'isBWImg': False},
                 'imageType': {'clipArtType': 0, 'lineDrawingType': 0}
-            }):
+            }) as mock_analyze:
                 with patch('function_app.calculate_appeal_score', return_value=0):
-                    # Track which blobs were analyzed
-                    analyzed_blobs = []
-                    
-                    def track_blob_analysis(blob_client):
-                        analyzed_blobs.append(blob_client)
-                        mock_download = MagicMock()
-                        mock_download.readall.return_value = b"fake image data"
-                        return mock_download
-                    
-                    mock_container_client.get_blob_client = MagicMock(side_effect=lambda name: Mock(url=f"http://test/{name}"))
-                    
-                    # Mock generate_blob_sas
                     with patch('function_app.generate_blob_sas', return_value="sas_token"):
+                        mock_container_client.get_blob_client = MagicMock(side_effect=lambda name: Mock(url=f"http://test/{name}"))
+                        
                         # Call select_best_photo
                         result = select_best_photo(
                             mock_blob_service,
@@ -66,9 +58,7 @@ def test_random_sampling_when_exceeds_limit():
                         )
                         
                         # Verify that only 5 blobs were processed (analyzed)
-                        # We can check this by verifying analyze_image_quality was called 5 times
-                        from function_app import analyze_image_quality
-                        assert analyze_image_quality.call_count == 5
+                        assert mock_analyze.call_count == 5
 
 
 def test_no_sampling_when_under_limit():
@@ -100,7 +90,7 @@ def test_no_sampling_when_under_limit():
                 'adult': {'isAdultContent': False, 'isRacyContent': False},
                 'color': {'isBWImg': False},
                 'imageType': {'clipArtType': 0, 'lineDrawingType': 0}
-            }):
+            }) as mock_analyze:
                 with patch('function_app.calculate_appeal_score', return_value=0):
                     with patch('function_app.generate_blob_sas', return_value="sas_token"):
                         mock_container_client.get_blob_client = MagicMock(side_effect=lambda name: Mock(url=f"http://test/{name}"))
@@ -114,38 +104,34 @@ def test_no_sampling_when_under_limit():
                         )
                         
                         # Verify that all 5 blobs were processed
-                        from function_app import analyze_image_quality
-                        assert analyze_image_quality.call_count == 5
+                        assert mock_analyze.call_count == 5
 
 
 def test_random_sampling_variability():
     """Test that random sampling produces different results on multiple runs"""
-    # Set MAX_PHOTOS_TO_ANALYZE to 3 for testing
-    with patch('function_app.MAX_PHOTOS_TO_ANALYZE', 3):
-        # Create 10 mock blobs
-        mock_blobs = []
-        for i in range(10):
-            mock_blob = Mock()
-            mock_blob.name = f"photo_{i}.jpg"
-            mock_blob.last_modified = datetime.utcnow()
-            mock_blobs.append(mock_blob)
+    # Create 10 mock blobs
+    mock_blobs = []
+    for i in range(10):
+        mock_blob = Mock()
+        mock_blob.name = f"photo_{i}.jpg"
+        mock_blob.last_modified = datetime.utcnow()
+        mock_blobs.append(mock_blob)
+    
+    # Collect samples from multiple runs
+    samples = []
+    for run in range(10):
+        # Use a different random seed for each run
+        random.seed(run)
         
-        # Collect samples from multiple runs
-        samples = []
-        for run in range(10):
-            # Use a different random seed for each run
-            import random
-            random.seed(run)
-            
-            # Sample blobs
-            import function_app
-            if len(mock_blobs) > function_app.MAX_PHOTOS_TO_ANALYZE:
-                sampled = random.sample(mock_blobs, function_app.MAX_PHOTOS_TO_ANALYZE)
-                samples.append(tuple(blob.name for blob in sampled))
-        
-        # Verify that we got different samples (not all the same)
-        unique_samples = set(samples)
-        assert len(unique_samples) > 1, "Random sampling should produce different results"
+        # Sample blobs (simulating what the function does)
+        max_photos = 3
+        if len(mock_blobs) > max_photos:
+            sampled = random.sample(mock_blobs, max_photos)
+            samples.append(tuple(blob.name for blob in sampled))
+    
+    # Verify that we got different samples (not all the same)
+    unique_samples = set(samples)
+    assert len(unique_samples) > 1, "Random sampling should produce different results"
 
 
 if __name__ == "__main__":
