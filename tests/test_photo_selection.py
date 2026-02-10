@@ -107,7 +107,12 @@ def test_no_sampling_when_under_limit():
 
 
 def test_random_sampling_variability():
-    """Test that random sampling produces different results on multiple runs"""
+    """Test that random sampling produces different results on multiple runs
+    
+    Note: This test is probabilistic but has a very low failure rate.
+    With 20 runs selecting 3 items from 10, the probability of getting
+    all identical samples is astronomically low (< 10^-30).
+    """
     # Create 10 mock blobs
     mock_blobs = []
     for i in range(10):
