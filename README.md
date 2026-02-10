@@ -136,10 +136,31 @@ az functionapp config appsettings set \
     BLOB_CONTAINER_NAME="milo-photos" \
     COMPUTER_VISION_ENDPOINT="https://<region>.api.cognitive.microsoft.com/" \
     COMPUTER_VISION_KEY="<your-cv-key>" \
-    OPENAI_API_KEY="<your-openai-key>" \
-    OPENAI_ENDPOINT="https://<your-openai-resource>.openai.azure.com/" \
-    OPENAI_DEPLOYMENT_NAME="dall-e-3" \
-    OPENAI_GPT4V_DEPLOYMENT_NAME="gpt-4o" \
+    OPENAI_IMAGE_MODEL="flux-2" \
+    OPENAI_IMAGE_API_KEY="<your-image-api-key>" \
+    OPENAI_IMAGE_ENDPOINT="<your-image-endpoint>" \
+    OPENAI_TEXT_MODEL="gpt-4o" \
+    OPENAI_TEXT_API_KEY="<your-text-api-key>" \
+    OPENAI_TEXT_ENDPOINT="<your-text-endpoint>" \
+    # Environment Variables
+
+    All configuration is handled via environment variables (set in Azure Function App Settings or local.settings.json):
+
+    #### Required Settings
+    - `AZURE_STORAGE_CONNECTION_STRING` - Azure Storage account connection string
+    - `BLOB_CONTAINER_NAME` - Container name for photos (default: "milo-photos")
+    - `COMPUTER_VISION_ENDPOINT` - Azure Computer Vision API endpoint
+    - `COMPUTER_VISION_KEY` - Computer Vision API key
+    - `OPENAI_IMAGE_MODEL` - Model name for image generation (e.g., "flux-2")
+    - `OPENAI_IMAGE_API_KEY` - API key for image model (if different)
+    - `OPENAI_IMAGE_ENDPOINT` - Endpoint for image model (if different)
+    - `OPENAI_TEXT_MODEL` - Model name for text/caption generation (e.g., "gpt-4o")
+    - `OPENAI_TEXT_API_KEY` - API key for text model (if different)
+    - `OPENAI_TEXT_ENDPOINT` - Endpoint for text model (if different)
+    - `POSTLY_API_KEY` - Postly API authentication key
+    - `POSTLY_WORKSPACE_ID` - Postly workspace identifier
+    - `POSTLY_TARGET_PLATFORMS` - Comma-separated list of Postly account IDs to post to (optional)
+    - `DAYS_TO_CHECK` - Number of days to look back for photos (default: 7)
     POSTLY_API_KEY="<your-postly-api-key>" \
     POSTLY_WORKSPACE_ID="<your-postly-workspace-id>" \
     POSTLY_TARGET_PLATFORMS="<account-id-1>,<account-id-2>" \

@@ -29,10 +29,15 @@ AZURE_STORAGE_CONNECTION_STRING = os.environ.get("AZURE_STORAGE_CONNECTION_STRIN
 BLOB_CONTAINER_NAME = os.environ.get("BLOB_CONTAINER_NAME", "milo-photos")
 COMPUTER_VISION_ENDPOINT = os.environ.get("COMPUTER_VISION_ENDPOINT")
 COMPUTER_VISION_KEY = os.environ.get("COMPUTER_VISION_KEY")
-OPENAI_API_KEY = os.environ.get("OPENAI_API_KEY")
-OPENAI_ENDPOINT = os.environ.get("OPENAI_ENDPOINT")
-OPENAI_DEPLOYMENT_NAME = os.environ.get("OPENAI_DEPLOYMENT_NAME", "dall-e-3")
-OPENAI_GPT4V_DEPLOYMENT_NAME = os.environ.get("OPENAI_GPT4V_DEPLOYMENT_NAME", "gpt-4o")  # GPT-4 Vision deployment
+
+# Separate API keys and endpoints for image and text models
+OPENAI_IMAGE_MODEL = os.environ.get("OPENAI_IMAGE_MODEL", "flux-2")
+OPENAI_IMAGE_API_KEY = os.environ.get("OPENAI_IMAGE_API_KEY", None)
+OPENAI_IMAGE_ENDPOINT = os.environ.get("OPENAI_IMAGE_ENDPOINT", None)
+
+OPENAI_TEXT_MODEL = os.environ.get("OPENAI_TEXT_MODEL", "gpt-4o")
+OPENAI_TEXT_API_KEY = os.environ.get("OPENAI_TEXT_API_KEY", None)
+OPENAI_TEXT_ENDPOINT = os.environ.get("OPENAI_TEXT_ENDPOINT", None)
 POSTLY_API_KEY = os.environ.get("POSTLY_API_KEY")
 POSTLY_WORKSPACE_ID = os.environ.get("POSTLY_WORKSPACE_ID")
 POSTLY_TARGET_PLATFORMS = os.environ.get("POSTLY_TARGET_PLATFORMS")  # Comma-separated account IDs
@@ -45,8 +50,8 @@ MIN_ACCEPTABLE_SCORE = 30  # Minimum photo appeal score to accept (0-100 scale)
 # Caption generation constants
 CAPTION_PREFIX = "Daily Milo! 😾"  # Grumpy cat emoji to match Milo's personality
 CAPTION_HASHTAGS = "#Milo #Cats #GrumpyCat"
-CAPTION_MAX_TOKENS = 100  # Maximum tokens for GPT caption generation
-CAPTION_TEMPERATURE = 0.8  # Temperature for caption creativity (0.0-1.0)
+CAPTION_MAX_TOKENS = 100  # Maximum tokens for GPT caption generation, current model does not support max tokens
+CAPTION_TEMPERATURE = 1.0  # Temperature for caption creativity (0.0-1.0), current model only supports 1.0
 
 
 def get_recent_blobs(container_client, days: int) -> List[BlobProperties]:
@@ -233,8 +238,8 @@ def select_best_photo(blob_service_client: BlobServiceClient,
 
 
 def extract_milo_characteristics(blob_service_client: BlobServiceClient,
-                                openai_client: AzureOpenAI,
-                                gpt4v_deployment: str,
+                                text_client: AzureOpenAI,
+                                text_model: str,
                                 container_name: str) -> str:
     """
     Analyze existing Milo photos using GPT-4 Vision to extract detailed visual characteristics.
@@ -312,8 +317,8 @@ def extract_milo_characteristics(blob_service_client: BlobServiceClient,
         logging.info(f"Analyzing {len(image_urls)} photos with GPT-4 Vision to extract Milo's characteristics")
         
         # Call GPT-4 Vision
-        response = openai_client.chat.completions.create(
-            model=gpt4v_deployment,
+        response = text_client.chat.completions.create(
+            model=text_model,
             messages=[
                 {
                     "role": "system",
@@ -408,8 +413,9 @@ def select_mood_and_prompt(milo_description: str = "an adorable cat") -> Tuple[s
     return mood, prompt
 
 
-def generate_ai_image(client: AzureOpenAI, deployment_name: str,
-                      gpt4v_deployment: str = None,
+def generate_ai_image(client: AzureOpenAI, image_model: str,
+                      text_client: AzureOpenAI = None,
+                      text_model: str = None,
                       blob_service_client: BlobServiceClient = None,
                       container_name: str = None) -> Optional[bytes]:
     """
@@ -431,9 +437,9 @@ def generate_ai_image(client: AzureOpenAI, deployment_name: str,
     try:
         # Extract Milo's characteristics from existing photos using GPT-4 Vision
         milo_description = "an adorable cat"
-        if blob_service_client and gpt4v_deployment and container_name:
+        if blob_service_client and text_client and text_model and container_name:
             milo_description = extract_milo_characteristics(
-                blob_service_client, client, gpt4v_deployment, container_name
+                blob_service_client, text_client, text_model, container_name
             )
         
         # Select a random mood and get corresponding prompt with Milo's characteristics
@@ -442,7 +448,7 @@ def generate_ai_image(client: AzureOpenAI, deployment_name: str,
         logging.info(f"Generating AI image with DALL-E using '{mood}' mood")
         logging.info(f"Milo's appearance: {milo_description}")
         response = client.images.generate(
-            model=deployment_name,
+            model=image_model,
             prompt=prompt,
             n=1,
             size="1024x1024",
@@ -542,7 +548,7 @@ def get_current_context() -> Dict[str, Any]:
 
 
 def generate_witty_caption(openai_client: AzureOpenAI, 
-                          gpt_deployment: str,
+                          text_model: str,
                           context: Dict[str, Any],
                           image_description: str = "") -> str:
     """
@@ -576,7 +582,7 @@ Context: {context_str}
 
 Generate a SHORT, witty, and engaging caption (maximum 15 words) that:
 - Reflects Milo's grumpy yet endearing personality
-- References the day/season/holiday if relevant in a clever way
+- Occasionally references the day/season/holiday, but not every time
 - Is funny and relatable to cat lovers
 - Avoids hashtags (they'll be added separately)
 - Uses a conversational tone that cats might use if they could talk
@@ -586,7 +592,7 @@ Return ONLY the caption text, nothing else."""
         logging.info(f"Generating witty caption with context: {context_str}")
         
         response = openai_client.chat.completions.create(
-            model=gpt_deployment,
+            model=text_model,
             messages=[
                 {
                     "role": "system",
@@ -597,7 +603,6 @@ Return ONLY the caption text, nothing else."""
                     "content": prompt
                 }
             ],
-            max_tokens=CAPTION_MAX_TOKENS,
             temperature=CAPTION_TEMPERATURE
         )
         
@@ -643,7 +648,7 @@ def post_to_postly(api_key: str, workspace_id: str,
     try:
         # Step 1: Upload the file to Postly to get a URL
         # Reference: https://docs.postly.ai/upload-a-file-17449007e0
-        upload_url = "https://api.postly.ai/files"
+        upload_url = "https://openapi.postly.ai/v1/files"
         
         # Both upload and post endpoints use X-API-KEY authentication
         headers = {
@@ -726,7 +731,7 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
     
     # Validate configuration
     if not all([AZURE_STORAGE_CONNECTION_STRING, COMPUTER_VISION_ENDPOINT, 
-                COMPUTER_VISION_KEY, OPENAI_API_KEY, OPENAI_ENDPOINT,
+                COMPUTER_VISION_KEY, OPENAI_TEXT_API_KEY, OPENAI_IMAGE_ENDPOINT,
                 POSTLY_API_KEY, POSTLY_WORKSPACE_ID]):
         logging.error("Missing required configuration. Please check environment variables.")
         return
@@ -745,56 +750,61 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
         cv_credentials = CognitiveServicesCredentials(COMPUTER_VISION_KEY)
         cv_client = ComputerVisionClient(COMPUTER_VISION_ENDPOINT, cv_credentials)
         
-        # Initialize OpenAI client (needed for both AI generation and caption)
-        openai_client = AzureOpenAI(
-            api_key=OPENAI_API_KEY,
+        # Initialize separate OpenAI clients for image and text
+        image_client = AzureOpenAI(
+            api_key=OPENAI_IMAGE_API_KEY,
             api_version="2024-02-01",
-            azure_endpoint=OPENAI_ENDPOINT
+            azure_endpoint=OPENAI_IMAGE_ENDPOINT
+        )
+        text_client = AzureOpenAI(
+            api_key=OPENAI_TEXT_API_KEY,
+            api_version="2024-02-01",
+            azure_endpoint=OPENAI_TEXT_ENDPOINT
         )
         
+
         result = select_best_photo(
             blob_service_client, 
             cv_client,
             BLOB_CONTAINER_NAME,
             DAYS_TO_CHECK
         )
-        
+
         if result:
             image_data, blob_name, image_description = result
             image_source = f"blob storage ({blob_name})"
         else:
             # Step 2: Fallback to AI generation
             logging.info("No suitable photo found, generating AI image")
-            
-            # Pass blob service client and GPT-4 Vision deployment to extract Milo's characteristics
             image_data = generate_ai_image(
-                openai_client, 
-                OPENAI_DEPLOYMENT_NAME,
-                gpt4v_deployment=OPENAI_GPT4V_DEPLOYMENT_NAME,
+                image_client,
+                image_model=OPENAI_IMAGE_MODEL,
+                text_client=text_client,
+                text_model=OPENAI_TEXT_MODEL,
                 blob_service_client=blob_service_client,
                 container_name=BLOB_CONTAINER_NAME
             )
-            image_source = "AI generated (DALL-E)"
-            image_description = ""  # AI generated images don't have analysis
-        
+            image_source = "AI generated (OpenAI)"
+            image_description = "AI-generated image of Milo"
+
         if not image_data:
             logging.error("Failed to obtain image (neither from storage nor AI)")
             return
-        
+
         # Step 3: Generate witty caption
         context = get_current_context()
         witty_caption = generate_witty_caption(
-            openai_client,
-            OPENAI_GPT4V_DEPLOYMENT_NAME,
-            context,
-            image_description
+            text_client,
+            text_model=OPENAI_TEXT_MODEL,
+            context=context,
+            image_description=image_description
         )
-        
+
         # Format caption: "Daily Milo! 😾" + witty caption + hashtags
         caption = f"{CAPTION_PREFIX} {witty_caption} {CAPTION_HASHTAGS}"
-        
+
         logging.info(f"Final caption: {caption}")
-        
+
         # Step 4: Post to Postly
         success = post_to_postly(
             POSTLY_API_KEY,
@@ -803,11 +813,11 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
             caption,
             POSTLY_TARGET_PLATFORMS
         )
-        
+
         if success:
             logging.info(f"Successfully posted daily Milo photo from {image_source}")
         else:
             logging.error(f"Failed to post to Postly (image source: {image_source})")
-            
+
     except Exception as e:
         logging.error(f"Error in daily_milo_post function: {str(e)}", exc_info=True)
