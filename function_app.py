@@ -716,7 +716,7 @@ def post_to_postly(api_key: str, workspace_id: str,
 
 
 @app.timer_trigger(
-    schedule="0 0 10 * * *",  # Cron: sec min hour day month day-of-week (10:00 AM UTC daily)
+    schedule="0 0 17 * * *",  # Cron: sec min hour day month day-of-week (10:00 AM UTC daily)
     arg_name="timer", 
     run_on_startup=False
 )
