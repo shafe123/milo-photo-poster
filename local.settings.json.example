@@ -14,6 +14,7 @@
     "POSTLY_API_KEY": "your-postly-api-key-here",
     "POSTLY_WORKSPACE_ID": "your-postly-workspace-id-here",
     "POSTLY_TARGET_PLATFORMS": "account-id-1,account-id-2",
-    "DAYS_TO_CHECK": "7"
+    "DAYS_TO_CHECK": "7",
+    "MAX_PHOTOS_TO_ANALYZE": "10"
   }
 }

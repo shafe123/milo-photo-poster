@@ -42,6 +42,7 @@ POSTLY_API_KEY = os.environ.get("POSTLY_API_KEY")
 POSTLY_WORKSPACE_ID = os.environ.get("POSTLY_WORKSPACE_ID")
 POSTLY_TARGET_PLATFORMS = os.environ.get("POSTLY_TARGET_PLATFORMS")  # Comma-separated account IDs
 DAYS_TO_CHECK = int(os.environ.get("DAYS_TO_CHECK", "7"))
+MAX_PHOTOS_TO_ANALYZE = int(os.environ.get("MAX_PHOTOS_TO_ANALYZE", "10"))  # Limit to avoid rate limits
 
 # Constants
 SUPPORTED_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
@@ -185,11 +186,17 @@ def select_best_photo(blob_service_client: BlobServiceClient,
             logging.info("No recent photos found in blob storage")
             return None
         
+        # Randomly sample photos to analyze (to avoid rate limits)
+        blobs_to_analyze = recent_blobs
+        if len(recent_blobs) > MAX_PHOTOS_TO_ANALYZE:
+            blobs_to_analyze = random.sample(recent_blobs, MAX_PHOTOS_TO_ANALYZE)
+            logging.info(f"Randomly selected {MAX_PHOTOS_TO_ANALYZE} photos from {len(recent_blobs)} available photos")
+        
         best_blob = None
         best_score = -1
         best_analysis = None
         
-        for blob in recent_blobs:
+        for blob in blobs_to_analyze:
             try:
                 # Get blob client and generate SAS URL for Computer Vision API access
                 blob_client = container_client.get_blob_client(blob.name)
