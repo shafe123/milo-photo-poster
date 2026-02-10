@@ -5,6 +5,10 @@ on:
         branches:
             - main
 
+permissions:
+    id-token: write
+    contents: read
+
 env:
     AZURE_FUNCTIONAPP_NAME: milo-photo-poster
     AZURE_FUNCTIONAPP_PACKAGE_PATH: "."
