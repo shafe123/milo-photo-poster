@@ -653,6 +653,7 @@ def post_to_postly(api_key: str, workspace_id: str,
         # Both upload and post endpoints use X-API-KEY authentication
         headers = {
             "X-API-KEY": api_key,
+            "X-File-Size": str(len(image_data))
         }
         
         files = {
@@ -690,11 +691,10 @@ def post_to_postly(api_key: str, workspace_id: str,
         
         # Add target platforms if provided
         if target_platforms:
-            # Split comma-separated account IDs and strip whitespace
-            platform_ids = [pid.strip() for pid in target_platforms.split(",") if pid.strip()]
-            if platform_ids:
-                post_data["target_platforms"] = platform_ids
-                logging.info(f"Targeting platforms: {platform_ids}")
+            post_data["target_platforms"] = target_platforms
+            logging.info(f"Targeting platforms: {target_platforms}")
+        else:
+            post_data["target_platforms"] = "all"
         
         logging.info("Creating post on Postly")
         post_response = requests.post(post_url, headers=headers, json=post_data)
