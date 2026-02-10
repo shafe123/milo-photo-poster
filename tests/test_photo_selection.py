@@ -3,7 +3,6 @@ Tests for photo selection and limiting logic
 """
 import sys
 import os
-import json
 import random
 from unittest.mock import Mock, MagicMock, patch
 from datetime import datetime, timedelta
@@ -117,21 +116,65 @@ def test_random_sampling_variability():
         mock_blob.last_modified = datetime.utcnow()
         mock_blobs.append(mock_blob)
     
-    # Collect samples from multiple runs
+    # Collect samples from multiple runs (without setting seed to test true randomness)
     samples = []
-    for run in range(10):
-        # Use a different random seed for each run
-        random.seed(run)
-        
+    max_photos = 3
+    for run in range(20):
         # Sample blobs (simulating what the function does)
-        max_photos = 3
         if len(mock_blobs) > max_photos:
             sampled = random.sample(mock_blobs, max_photos)
-            samples.append(tuple(blob.name for blob in sampled))
+            samples.append(tuple(sorted(blob.name for blob in sampled)))
     
     # Verify that we got different samples (not all the same)
+    # With 20 runs selecting 3 from 10, we should get multiple unique combinations
     unique_samples = set(samples)
     assert len(unique_samples) > 1, "Random sampling should produce different results"
+
+
+def test_boundary_condition_exact_limit():
+    """Test that all photos are analyzed when count equals MAX_PHOTOS_TO_ANALYZE"""
+    # Set MAX_PHOTOS_TO_ANALYZE to 5 for testing
+    with patch('function_app.MAX_PHOTOS_TO_ANALYZE', 5):
+        # Create mock blob service client
+        mock_blob_service = MagicMock()
+        mock_container_client = MagicMock()
+        mock_blob_service.get_container_client.return_value = mock_container_client
+        
+        # Create exactly 5 mock blobs (equal to limit)
+        mock_blobs = []
+        for i in range(5):
+            mock_blob = Mock()
+            mock_blob.name = f"photo_{i}.jpg"
+            mock_blob.last_modified = datetime.utcnow()
+            mock_blobs.append(mock_blob)
+        
+        # Mock get_recent_blobs to return 5 blobs
+        with patch('function_app.get_recent_blobs', return_value=mock_blobs):
+            # Mock Computer Vision client
+            mock_cv_client = MagicMock()
+            
+            # Mock analyze_image_quality
+            with patch('function_app.analyze_image_quality', return_value={
+                'description': {'captions': [{'text': 'test', 'confidence': 0.1}]},
+                'tags': [],
+                'adult': {'isAdultContent': False, 'isRacyContent': False},
+                'color': {'isBWImg': False},
+                'imageType': {'clipArtType': 0, 'lineDrawingType': 0}
+            }) as mock_analyze:
+                with patch('function_app.calculate_appeal_score', return_value=0):
+                    with patch('function_app.generate_blob_sas', return_value="sas_token"):
+                        mock_container_client.get_blob_client = MagicMock(side_effect=lambda name: Mock(url=f"http://test/{name}"))
+                        
+                        # Call select_best_photo
+                        result = select_best_photo(
+                            mock_blob_service,
+                            mock_cv_client,
+                            "test-container",
+                            7
+                        )
+                        
+                        # Verify that all 5 blobs were processed (no sampling needed)
+                        assert mock_analyze.call_count == 5
 
 
 if __name__ == "__main__":
@@ -142,6 +185,10 @@ if __name__ == "__main__":
     print("\nRunning test_no_sampling_when_under_limit...")
     test_no_sampling_when_under_limit()
     print("✓ test_no_sampling_when_under_limit passed")
+    
+    print("\nRunning test_boundary_condition_exact_limit...")
+    test_boundary_condition_exact_limit()
+    print("✓ test_boundary_condition_exact_limit passed")
     
     print("\nRunning test_random_sampling_variability...")
     test_random_sampling_variability()
