@@ -217,6 +217,27 @@ def downsize_image_if_needed(blob_client, max_size_bytes: int = MAX_IMAGE_SIZE_B
         return False
 
 
+def _convert_to_rgb(image: Image.Image) -> Image.Image:
+    """
+    Convert image to RGB mode for JPEG compatibility.
+    Handles RGBA, LA, and palette images by removing transparency.
+    
+    Args:
+        image: PIL Image in any mode
+        
+    Returns:
+        PIL Image in RGB mode
+    """
+    if image.mode not in ('RGBA', 'LA', 'P'):
+        return image
+    
+    rgb_image = Image.new('RGB', image.size, (255, 255, 255))
+    if image.mode == 'P':
+        image = image.convert('RGBA')
+    rgb_image.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
+    return rgb_image
+
+
 def create_bluesky_optimized_image(image_data: bytes, max_size_bytes: int = MAX_BLUESKY_SIZE_BYTES) -> bytes:
     """
     Create a Bluesky-optimized version of an image.
@@ -230,16 +251,9 @@ def create_bluesky_optimized_image(image_data: bytes, max_size_bytes: int = MAX_
         Optimized image bytes that fit within Bluesky's size limits
     """
     try:
-        # Load and convert the image once
+        # Load and convert the image to RGB for JPEG compatibility
         image = Image.open(io.BytesIO(image_data))
-        
-        # Convert RGBA/LA/P images to RGB for JPEG compatibility
-        if image.mode in ('RGBA', 'LA', 'P'):
-            rgb_image = Image.new('RGB', image.size, (255, 255, 255))
-            if image.mode == 'P':
-                image = image.convert('RGBA')
-            rgb_image.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
-            image = rgb_image
+        image = _convert_to_rgb(image)
         
         # Start with original dimensions
         width, height = image.size
@@ -259,18 +273,14 @@ def create_bluesky_optimized_image(image_data: bytes, max_size_bytes: int = MAX_
                 return output.read()
             
             # If still too large at lower quality, try reducing dimensions by 10%
+            # Only resize if we're significantly over the limit (>20%) to avoid unnecessary resizing
             if quality <= 75 and output_size > max_size_bytes * 1.2:
                 new_width = int(width * 0.9)
                 new_height = int(height * 0.9)
                 
-                # Reload and convert the original image, then resize
+                # Reload the original image and resize it
                 temp_image = Image.open(io.BytesIO(image_data))
-                if temp_image.mode in ('RGBA', 'LA', 'P'):
-                    rgb_image = Image.new('RGB', temp_image.size, (255, 255, 255))
-                    if temp_image.mode == 'P':
-                        temp_image = temp_image.convert('RGBA')
-                    rgb_image.paste(temp_image, mask=temp_image.split()[-1] if temp_image.mode in ('RGBA', 'LA') else None)
-                    temp_image = rgb_image
+                temp_image = _convert_to_rgb(temp_image)
                 
                 image = temp_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
                 width, height = new_width, new_height
