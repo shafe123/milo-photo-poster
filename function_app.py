@@ -14,7 +14,7 @@ import base64
 import calendar
 
 import azure.functions as func
-from azure.storage.blob import BlobServiceClient, BlobProperties, generate_blob_sas, BlobSasPermissions
+from azure.storage.blob import BlobServiceClient, BlobProperties, generate_blob_sas, BlobSasPermissions, ContentSettings
 from azure.cognitiveservices.vision.computervision import ComputerVisionClient
 from azure.cognitiveservices.vision.computervision.models import VisualFeatureTypes
 from msrest.authentication import CognitiveServicesCredentials
@@ -199,7 +199,7 @@ def downsize_image_if_needed(blob_client, max_size_bytes: int = MAX_IMAGE_SIZE_B
             if output_size <= max_size_bytes:
                 # Size is acceptable, upload the downsized image
                 output.seek(0)
-                blob_client.upload_blob(output, overwrite=True, content_settings={'content_type': 'image/jpeg'})
+                blob_client.upload_blob(output, overwrite=True, content_settings=ContentSettings(content_type='image/jpeg'))
                 logging.info(f"Downsized image from {current_size / 1024 / 1024:.2f} MB to {output_size / 1024 / 1024:.2f} MB (quality={quality})")
                 return True
             
