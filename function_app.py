@@ -41,6 +41,8 @@ OPENAI_TEXT_ENDPOINT = os.environ.get("OPENAI_TEXT_ENDPOINT", None)
 POSTLY_API_KEY = os.environ.get("POSTLY_API_KEY")
 POSTLY_WORKSPACE_ID = os.environ.get("POSTLY_WORKSPACE_ID")
 POSTLY_TARGET_PLATFORMS = os.environ.get("POSTLY_TARGET_PLATFORMS")  # Comma-separated account IDs
+POSTLY_BLUESKY_ACCOUNT_ID = os.environ.get("POSTLY_BLUESKY_ACCOUNT_ID", "bluesky")  # Bluesky account ID (default: "bluesky")
+POSTLY_INSTAGRAM_ACCOUNT_ID = os.environ.get("POSTLY_INSTAGRAM_ACCOUNT_ID", "instagram")  # Instagram account ID (default: "instagram")
 DAYS_TO_CHECK = int(os.environ.get("DAYS_TO_CHECK", "7"))
 MAX_PHOTOS_TO_ANALYZE = int(os.environ.get("MAX_PHOTOS_TO_ANALYZE", "10"))  # Limit to avoid rate limits
 POSTED_HISTORY_DAYS = int(os.environ.get("POSTED_HISTORY_DAYS", "30"))  # Days to remember posted photos
@@ -871,55 +873,81 @@ Return ONLY the caption text, nothing else."""
 
 
 def post_to_postly(api_key: str, workspace_id: str, 
-                   image_data: bytes, caption: str, target_platforms: Optional[str] = None) -> bool:
+                   image_data: bytes, caption: str, target_platforms: Optional[str] = None,
+                   bluesky_account_id: Optional[str] = None) -> bool:
     """
     Post image to Postly API.
-    Creates a Bluesky-optimized version of the image to ensure compatibility with all platforms.
+    Uploads both full-quality and Bluesky-optimized images, using platform_posts to specify
+    which platforms use which version.
     
     Args:
         api_key: Postly API key
         workspace_id: Postly workspace ID
-        image_data: Image bytes to upload
+        image_data: Image bytes to upload (full quality)
         caption: Caption for the post
         target_platforms: Comma-separated list of platform account IDs (optional)
+        bluesky_account_id: Bluesky account ID for platform-specific media override (optional)
         
     Returns:
         True if successful, False otherwise
     """
     try:
-        # Create Bluesky-optimized version of the image
-        # This ensures the image works on all platforms, including Bluesky's 976KB limit
-        optimized_image_data = create_bluesky_optimized_image(image_data)
+        headers = {
+            "X-API-KEY": api_key
+        }
         
-        # Step 1: Upload the optimized file to Postly to get a URL
-        # Reference: https://docs.postly.ai/upload-a-file-17449007e0
         upload_url = "https://openapi.postly.ai/v1/files"
         
-        # Both upload and post endpoints use X-API-KEY authentication
-        headers = {
-            "X-API-KEY": api_key,
-            "X-File-Size": str(len(optimized_image_data))
+        # Step 1: Upload the full-quality image for Instagram and other platforms
+        # Reference: https://docs.postly.ai/upload-a-file-17449007e0
+        logging.info(f"Uploading full-quality image to Postly ({len(image_data) / 1024:.1f}KB)")
+        
+        full_quality_headers = headers.copy()
+        full_quality_headers["X-File-Size"] = str(len(image_data))
+        
+        full_quality_files = {
+            "file": ("milo_full.jpg", image_data, "image/jpeg")
         }
         
-        files = {
-            "file": ("milo.jpg", optimized_image_data, "image/jpeg")
-        }
+        full_quality_response = requests.post(upload_url, headers=full_quality_headers, files=full_quality_files)
+        full_quality_response.raise_for_status()
         
-        logging.info(f"Uploading Bluesky-optimized image to Postly ({len(optimized_image_data) / 1024:.1f}KB)")
-        upload_response = requests.post(upload_url, headers=headers, files=files)
-        upload_response.raise_for_status()
+        full_quality_data = full_quality_response.json()
+        full_quality_url = full_quality_data.get("data", {}).get("url")
         
-        # Extract the URL from the response
-        upload_data = upload_response.json()
-        media_url = upload_data.get("data", {}).get("url")
-        
-        if not media_url:
-            logging.error(f"No URL returned from upload. Response: {upload_data}")
+        if not full_quality_url:
+            logging.error(f"No URL returned from full-quality upload. Response: {full_quality_data}")
             return False
         
-        logging.info(f"Image uploaded successfully. URL: {media_url}")
+        logging.info(f"Full-quality image uploaded successfully. URL: {full_quality_url}")
         
-        # Step 2: Create a post with the uploaded media
+        # Step 2: If Bluesky account is configured, upload optimized image for Bluesky
+        bluesky_url = None
+        if bluesky_account_id:
+            bluesky_image_data = create_bluesky_optimized_image(image_data)
+            
+            logging.info(f"Uploading Bluesky-optimized image to Postly ({len(bluesky_image_data) / 1024:.1f}KB)")
+            
+            bluesky_headers = headers.copy()
+            bluesky_headers["X-File-Size"] = str(len(bluesky_image_data))
+            
+            bluesky_files = {
+                "file": ("milo_bluesky.jpg", bluesky_image_data, "image/jpeg")
+            }
+            
+            bluesky_response = requests.post(upload_url, headers=bluesky_headers, files=bluesky_files)
+            bluesky_response.raise_for_status()
+            
+            bluesky_data = bluesky_response.json()
+            bluesky_url = bluesky_data.get("data", {}).get("url")
+            
+            if not bluesky_url:
+                logging.warning(f"No URL returned from Bluesky upload. Response: {bluesky_data}")
+                logging.warning("Will use full-quality image for all platforms")
+            else:
+                logging.info(f"Bluesky-optimized image uploaded successfully. URL: {bluesky_url}")
+        
+        # Step 3: Create a post with the uploaded media
         # Reference: https://docs.postly.ai/create-a-post-17486212e0
         post_url = "https://openapi.postly.ai/v1/posts"
         
@@ -928,7 +956,7 @@ def post_to_postly(api_key: str, workspace_id: str,
             "text": caption,
             "media": [
                 {
-                    "url": media_url,
+                    "url": full_quality_url,
                     "type": "image/jpeg"
                 }
             ]
@@ -940,6 +968,21 @@ def post_to_postly(api_key: str, workspace_id: str,
             logging.info(f"Targeting platforms: {target_platforms}")
         else:
             post_data["target_platforms"] = "all"
+        
+        # Add platform-specific media override for Bluesky if configured
+        if bluesky_account_id and bluesky_url:
+            post_data["platform_posts"] = [
+                {
+                    "account": bluesky_account_id,
+                    "media": [
+                        {
+                            "url": bluesky_url,
+                            "type": "image/jpeg"
+                        }
+                    ]
+                }
+            ]
+            logging.info(f"Using platform-specific media for Bluesky account {bluesky_account_id}")
         
         logging.info("Creating post on Postly")
         post_response = requests.post(post_url, headers=headers, json=post_data)
@@ -1057,7 +1100,8 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
             POSTLY_WORKSPACE_ID,
             image_data,
             caption,
-            POSTLY_TARGET_PLATFORMS
+            POSTLY_TARGET_PLATFORMS,
+            POSTLY_BLUESKY_ACCOUNT_ID
         )
 
         if success:
