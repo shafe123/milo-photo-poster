@@ -230,24 +230,24 @@ def create_bluesky_optimized_image(image_data: bytes, max_size_bytes: int = MAX_
         Optimized image bytes that fit within Bluesky's size limits
     """
     try:
-        # Load the image
+        # Load and convert the image once
         image = Image.open(io.BytesIO(image_data))
+        
+        # Convert RGBA/LA/P images to RGB for JPEG compatibility
+        if image.mode in ('RGBA', 'LA', 'P'):
+            rgb_image = Image.new('RGB', image.size, (255, 255, 255))
+            if image.mode == 'P':
+                image = image.convert('RGBA')
+            rgb_image.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
+            image = rgb_image
         
         # Start with original dimensions
         width, height = image.size
         quality = 85  # Start with high quality
         
         # Try progressively smaller sizes until we're under the limit
-        while quality > 20:
+        while quality >= 20:
             output = io.BytesIO()
-            
-            # Convert RGBA/LA/P images to RGB for JPEG compatibility
-            if image.mode in ('RGBA', 'LA', 'P'):
-                rgb_image = Image.new('RGB', image.size, (255, 255, 255))
-                if image.mode == 'P':
-                    image = image.convert('RGBA')
-                rgb_image.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
-                image = rgb_image
             
             # Save with current quality
             image.save(output, format='JPEG', quality=quality, optimize=True)
@@ -258,21 +258,21 @@ def create_bluesky_optimized_image(image_data: bytes, max_size_bytes: int = MAX_
                 output.seek(0)
                 return output.read()
             
-            # If still too large, try reducing dimensions by 10%
+            # If still too large at lower quality, try reducing dimensions by 10%
             if quality <= 75 and output_size > max_size_bytes * 1.2:
                 new_width = int(width * 0.9)
                 new_height = int(height * 0.9)
-                image = Image.open(io.BytesIO(image_data))
                 
-                # Convert again if needed after reloading
-                if image.mode in ('RGBA', 'LA', 'P'):
-                    rgb_image = Image.new('RGB', image.size, (255, 255, 255))
-                    if image.mode == 'P':
-                        image = image.convert('RGBA')
-                    rgb_image.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
-                    image = rgb_image
+                # Reload and convert the original image, then resize
+                temp_image = Image.open(io.BytesIO(image_data))
+                if temp_image.mode in ('RGBA', 'LA', 'P'):
+                    rgb_image = Image.new('RGB', temp_image.size, (255, 255, 255))
+                    if temp_image.mode == 'P':
+                        temp_image = temp_image.convert('RGBA')
+                    rgb_image.paste(temp_image, mask=temp_image.split()[-1] if temp_image.mode in ('RGBA', 'LA') else None)
+                    temp_image = rgb_image
                 
-                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                image = temp_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
                 width, height = new_width, new_height
                 logging.info(f"Resized to {width}x{height} for Bluesky optimization")
             
