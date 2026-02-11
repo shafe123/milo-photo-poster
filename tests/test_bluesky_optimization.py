@@ -11,11 +11,11 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')
 from function_app import create_bluesky_optimized_image, MAX_BLUESKY_SIZE_BYTES
 
 
-def create_test_image(width, height, format='JPEG', color='red'):
+def create_test_image(width, height, image_format='JPEG', color='red'):
     """Helper function to create a test image"""
     img = Image.new('RGB', (width, height), color=color)
     buffer = io.BytesIO()
-    img.save(buffer, format=format, quality=95)
+    img.save(buffer, format=image_format, quality=95)
     buffer.seek(0)
     return buffer.getvalue()
 

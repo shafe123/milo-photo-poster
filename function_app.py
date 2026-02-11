@@ -54,6 +54,8 @@ POSTED_METADATA_KEY = "posted_date"  # Metadata key for tracking when a photo wa
 MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024  # 4 MB - Azure Computer Vision API limit for v3.2
 MAX_IMAGE_DIMENSION = 4096  # Maximum dimension to downsize images to
 MAX_BLUESKY_SIZE_BYTES = 900 * 1024  # 900 KB - Bluesky max is 976KB, use 900KB for safety margin
+MIN_IMAGE_DIMENSION = 200  # Minimum dimension to prevent over-compression
+RESIZE_THRESHOLD_MULTIPLIER = 1.2  # Only resize if >20% over limit to avoid unnecessary resizing
 
 # Caption generation constants
 CAPTION_PREFIX = "Daily Milo! 😾"  # Grumpy cat emoji to match Milo's personality
@@ -263,7 +265,6 @@ def create_bluesky_optimized_image(image_data: bytes, max_size_bytes: int = MAX_
         image = original_rgb
         width, height = image.size
         quality = 85  # Start with high quality
-        output = None  # Initialize to avoid NameError
         
         # Try progressively smaller sizes until we're under the limit
         while quality >= 20:
@@ -279,28 +280,27 @@ def create_bluesky_optimized_image(image_data: bytes, max_size_bytes: int = MAX_
                 return output.read()
             
             # If still too large at lower quality, try reducing dimensions by 10%
-            # Only resize if we're significantly over the limit (>20%) to avoid unnecessary resizing
-            if quality <= 75 and output_size > max_size_bytes * 1.2:
+            if quality <= 75 and output_size > max_size_bytes * RESIZE_THRESHOLD_MULTIPLIER:
                 new_width = int(width * 0.9)
                 new_height = int(height * 0.9)
                 
-                # Resize from the original RGB image (avoid repeated I/O)
-                image = original_rgb.resize((new_width, new_height), Image.Resampling.LANCZOS)
-                width, height = new_width, new_height
-                logging.info(f"Resized to {width}x{height} for Bluesky optimization")
+                # Don't resize below minimum dimensions to prevent over-compression
+                if new_width < MIN_IMAGE_DIMENSION or new_height < MIN_IMAGE_DIMENSION:
+                    logging.info(f"Reached minimum dimension limit ({MIN_IMAGE_DIMENSION}px), continuing with quality reduction only")
+                else:
+                    # Resize from the original RGB image (avoid repeated I/O)
+                    image = original_rgb.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                    width, height = new_width, new_height
+                    logging.info(f"Resized to {width}x{height} for Bluesky optimization")
             
             # Reduce quality for next iteration
             quality -= 5
         
         # If we couldn't get it small enough, return the smallest we got
-        if output:
-            logging.warning(f"Could not optimize image to under {max_size_bytes / 1024}KB, returning best effort")
-            output.seek(0)
-            return output.read()
-        else:
-            # Edge case: loop never executed (shouldn't happen with quality=85 start)
-            logging.warning(f"Unexpected optimization failure, returning original")
-            return image_data
+        # With quality=85 start, the loop always executes at least once
+        logging.warning(f"Could not optimize image to under {max_size_bytes / 1024}KB, returning best effort")
+        output.seek(0)
+        return output.read()
         
     except Exception as e:
         logging.error(f"Error creating Bluesky-optimized image: {str(e)}")
