@@ -85,17 +85,24 @@ az cognitiveservices account create \
 # 2. Select: gpt-4o (or gpt-4-turbo-vision), Name: gpt-4o
 ```
 
-#### Function App
+#### Function App (Flex Consumption Plan)
 ```bash
+# Create Function App with Flex Consumption plan
 az functionapp create \
   --resource-group milo-photos-rg \
-  --consumption-plan-location eastus \
-  --runtime python \
-  --runtime-version 3.11 \
-  --functions-version 4 \
   --name milo-photo-poster \
   --storage-account milophotosstg \
-  --os-type linux
+  --flexconsumption-location eastus \
+  --runtime python \
+  --runtime-version 3.11 \
+  --functions-version 4
+
+# (Optional) Configure instance scaling limits
+az functionapp config set \
+  --resource-group milo-photos-rg \
+  --name milo-photo-poster \
+  --minimum-elastic-instance-count 0 \
+  --maximum-elastic-instance-count 3
 ```
 
 ### 2. Configure Application Settings
@@ -127,47 +134,67 @@ az cognitiveservices account keys list \
 
 Configure the Function App settings:
 
+#### Option 1: Deploy from local.settings.json (Recommended)
+
+Use the provided deployment script to automatically upload all settings from your `local.settings.json`:
+
+**PowerShell (Windows):**
+```powershell
+.\deploy-settings.ps1 -ResourceGroup "milo-photos-rg" -FunctionAppName "milo-photo-poster"
+```
+
+**Bash (Linux/macOS):**
+```bash
+chmod +x deploy-settings.sh
+./deploy-settings.sh milo-photos-rg milo-photo-poster
+```
+
+The script will automatically:
+- Read all settings from `local.settings.json`
+- Skip Azure-managed settings (FUNCTIONS_WORKER_RUNTIME, etc.)
+- Deploy all application settings to your Function App
+
+#### Option 2: Manual Configuration
+
 ```bash
 az functionapp config appsettings set \
   --name milo-photo-poster \
   --resource-group milo-photos-rg \
   --settings \
-    AZURE_STORAGE_CONNECTION_STRING="<your-storage-connection-string>" \
+    AZURE_STORAGE_CONNECTION_STRING="<connection-string>" \
     BLOB_CONTAINER_NAME="milo-photos" \
-    COMPUTER_VISION_ENDPOINT="https://<region>.api.cognitive.microsoft.com/" \
-    COMPUTER_VISION_KEY="<your-cv-key>" \
-    OPENAI_IMAGE_MODEL="flux-2" \
-    OPENAI_IMAGE_API_KEY="<your-image-api-key>" \
-    OPENAI_IMAGE_ENDPOINT="<your-image-endpoint>" \
-    OPENAI_TEXT_MODEL="gpt-4o" \
-    OPENAI_TEXT_API_KEY="<your-text-api-key>" \
-    OPENAI_TEXT_ENDPOINT="<your-text-endpoint>" \
-    # Environment Variables
-
-    All configuration is handled via environment variables (set in Azure Function App Settings or local.settings.json):
-
-    #### Required Settings
-    - `AZURE_STORAGE_CONNECTION_STRING` - Azure Storage account connection string
-    - `BLOB_CONTAINER_NAME` - Container name for photos (default: "milo-photos")
-    - `COMPUTER_VISION_ENDPOINT` - Azure Computer Vision API endpoint
-    - `COMPUTER_VISION_KEY` - Computer Vision API key
-    - `OPENAI_IMAGE_MODEL` - Model name for image generation (e.g., "flux-2")
-    - `OPENAI_IMAGE_API_KEY` - API key for image model (if different)
-    - `OPENAI_IMAGE_ENDPOINT` - Endpoint for image model (if different)
-    - `OPENAI_TEXT_MODEL` - Model name for text/caption generation (e.g., "gpt-4o")
-    - `OPENAI_TEXT_API_KEY` - API key for text model (if different)
-    - `OPENAI_TEXT_ENDPOINT` - Endpoint for text model (if different)
-    - `POSTLY_API_KEY` - Postly API authentication key
-    - `POSTLY_WORKSPACE_ID` - Postly workspace identifier
-    - `POSTLY_TARGET_PLATFORMS` - Comma-separated list of Postly account IDs to post to (optional)
-    - `DAYS_TO_CHECK` - Number of days to look back for photos (default: 7)
-    - `MAX_PHOTOS_TO_ANALYZE` - Maximum number of photos to analyze from recent uploads (default: 10) to avoid API rate limits
-    - `POSTED_HISTORY_DAYS` - Number of days to remember posted photos to avoid duplicates (default: 30)
-    POSTLY_API_KEY="<your-postly-api-key>" \
-    POSTLY_WORKSPACE_ID="<your-postly-workspace-id>" \
-    POSTLY_TARGET_PLATFORMS="<account-id-1>,<account-id-2>" \
-    DAYS_TO_CHECK="1"
+    COMPUTER_VISION_ENDPOINT="<endpoint>" \
+    COMPUTER_VISION_KEY="<key>" \
+    # ... add all other settings
 ```
+
+## Environment Variables Reference
+
+The following environment variables must be set in Azure Function App Settings or local.settings.json:
+
+- AZURE_STORAGE_CONNECTION_STRING
+- BLOB_CONTAINER_NAME
+- COMPUTER_VISION_ENDPOINT
+- COMPUTER_VISION_KEY
+- OPENAI_IMAGE_MODEL
+- OPENAI_IMAGE_API_KEY
+- OPENAI_IMAGE_ENDPOINT
+- OPENAI_TEXT_MODEL
+- OPENAI_TEXT_API_KEY
+- OPENAI_TEXT_ENDPOINT
+- POSTLY_API_KEY
+- POSTLY_WORKSPACE_ID
+- POSTLY_TARGET_PLATFORMS
+- DAYS_TO_CHECK
+- MAX_PHOTOS_TO_ANALYZE
+- POSTED_HISTORY_DAYS
+- FUNCTIONS_WORKER_RUNTIME
+- FUNCTIONS_EXTENSION_VERSION
+- WEBSITE_CONTENTAZUREFILECONNECTIONSTRING
+- WEBSITE_CONTENTSHARE
+- APPLICATIONINSIGHTS_CONNECTION_STRING
+
+**Do not commit values/secrets to the repository.**
 
 ### 3. Upload Milo Photos to Blob Storage
 
@@ -245,13 +272,23 @@ for blob in container.list_blobs():
 
 ## Deployment
 
-### Option 1: Deploy via Azure CLI
+### Option 1: Deploy via Azure CLI (Recommended for Flex Consumption)
 ```bash
 # From the project root directory
 func azure functionapp publish milo-photo-poster
 ```
 
+**Note for Flex Consumption Plans**: This is currently the most reliable deployment method. The Azure Functions Core Tools handle Flex Consumption deployments correctly.
+
 ### Option 2: Deploy via VS Code
+
+**⚠️ Known Issue with Flex Consumption Plans**: The Azure Functions VS Code extension may show "Failed to get status of deployment" errors when deploying to Flex Consumption plans. This is a known limitation. If you encounter this error:
+
+1. Use **Option 1** (Azure CLI) instead, or
+2. The deployment may have succeeded despite the error - check the Azure Portal to verify
+3. Alternatively, deploy from the terminal within VS Code using `func azure functionapp publish milo-photo-poster`
+
+**If using VS Code extension:**
 1. Install the [Azure Functions extension](https://marketplace.visualstudio.com/items?itemName=ms-azuretools.vscode-azurefunctions)
 2. Open the project in VS Code
 3. Click the Azure icon in the sidebar
