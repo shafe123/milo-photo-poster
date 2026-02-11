@@ -223,15 +223,17 @@ def _convert_to_rgb(image: Image.Image) -> Image.Image:
     """
     Convert image to RGB mode for JPEG compatibility.
     Handles RGBA, LA, and palette images by removing transparency.
+    Always returns a new image to avoid modifying the input.
     
     Args:
         image: PIL Image in any mode
         
     Returns:
-        PIL Image in RGB mode
+        New PIL Image in RGB mode
     """
     if image.mode not in ('RGBA', 'LA', 'P'):
-        return image
+        # Return a copy to maintain consistent behavior
+        return image.copy()
     
     rgb_image = Image.new('RGB', image.size, (255, 255, 255))
     if image.mode == 'P':
@@ -253,13 +255,15 @@ def create_bluesky_optimized_image(image_data: bytes, max_size_bytes: int = MAX_
         Optimized image bytes that fit within Bluesky's size limits
     """
     try:
-        # Load and convert the image to RGB for JPEG compatibility
-        image = Image.open(io.BytesIO(image_data))
-        image = _convert_to_rgb(image)
+        # Load the original image once and keep it for potential resizing
+        original_image = Image.open(io.BytesIO(image_data))
+        original_rgb = _convert_to_rgb(original_image)
         
-        # Start with original dimensions
+        # Start with a copy of the RGB image
+        image = original_rgb
         width, height = image.size
         quality = 85  # Start with high quality
+        output = None  # Initialize to avoid NameError
         
         # Try progressively smaller sizes until we're under the limit
         while quality >= 20:
@@ -280,11 +284,8 @@ def create_bluesky_optimized_image(image_data: bytes, max_size_bytes: int = MAX_
                 new_width = int(width * 0.9)
                 new_height = int(height * 0.9)
                 
-                # Reload the original image and resize it
-                temp_image = Image.open(io.BytesIO(image_data))
-                temp_image = _convert_to_rgb(temp_image)
-                
-                image = temp_image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                # Resize from the original RGB image (avoid repeated I/O)
+                image = original_rgb.resize((new_width, new_height), Image.Resampling.LANCZOS)
                 width, height = new_width, new_height
                 logging.info(f"Resized to {width}x{height} for Bluesky optimization")
             
@@ -292,9 +293,14 @@ def create_bluesky_optimized_image(image_data: bytes, max_size_bytes: int = MAX_
             quality -= 5
         
         # If we couldn't get it small enough, return the smallest we got
-        logging.warning(f"Could not optimize image to under {max_size_bytes / 1024}KB, returning best effort")
-        output.seek(0)
-        return output.read()
+        if output:
+            logging.warning(f"Could not optimize image to under {max_size_bytes / 1024}KB, returning best effort")
+            output.seek(0)
+            return output.read()
+        else:
+            # Edge case: loop never executed (shouldn't happen with quality=85 start)
+            logging.warning(f"Unexpected optimization failure, returning original")
+            return image_data
         
     except Exception as e:
         logging.error(f"Error creating Bluesky-optimized image: {str(e)}")
