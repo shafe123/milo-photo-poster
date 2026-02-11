@@ -14,7 +14,7 @@ import base64
 import calendar
 
 import azure.functions as func
-from azure.storage.blob import BlobServiceClient, BlobProperties, generate_blob_sas, BlobSasPermissions
+from azure.storage.blob import BlobServiceClient, BlobProperties, generate_blob_sas, BlobSasPermissions, ContentSettings
 from azure.cognitiveservices.vision.computervision import ComputerVisionClient
 from azure.cognitiveservices.vision.computervision.models import VisualFeatureTypes
 from msrest.authentication import CognitiveServicesCredentials
@@ -49,6 +49,8 @@ POSTED_HISTORY_DAYS = int(os.environ.get("POSTED_HISTORY_DAYS", "30"))  # Days t
 SUPPORTED_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
 MIN_ACCEPTABLE_SCORE = 30  # Minimum photo appeal score to accept (0-100 scale)
 POSTED_METADATA_KEY = "posted_date"  # Metadata key for tracking when a photo was posted
+MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024  # 4 MB - Azure Computer Vision API limit for v3.2
+MAX_IMAGE_DIMENSION = 4096  # Maximum dimension to downsize images to
 
 # Caption generation constants
 CAPTION_PREFIX = "Daily Milo! 😾"  # Grumpy cat emoji to match Milo's personality
@@ -134,6 +136,84 @@ def mark_blob_as_posted(blob_client) -> None:
         logging.info(f"Marked blob as posted: {blob_client.blob_name}")
     except Exception as e:
         logging.error(f"Error marking blob as posted: {str(e)}")
+
+
+def downsize_image_if_needed(blob_client, max_size_bytes: int = MAX_IMAGE_SIZE_BYTES, 
+                              max_dimension: int = MAX_IMAGE_DIMENSION) -> bool:
+    """
+    Check if an image is too large and downsize it if needed.
+    Overwrites the original blob with the downsized version.
+    
+    Args:
+        blob_client: Azure Blob Storage client for the image
+        max_size_bytes: Maximum allowed file size in bytes
+        max_dimension: Maximum width or height to resize to
+        
+    Returns:
+        True if image was downsized, False otherwise
+    """
+    try:
+        # Get blob properties to check size
+        properties = blob_client.get_blob_properties()
+        current_size = properties.size
+        
+        # If image is under the limit, no need to downsize
+        if current_size <= max_size_bytes:
+            return False
+            
+        logging.info(f"Image {blob_client.blob_name} is {current_size / 1024 / 1024:.2f} MB, downsizing...")
+        
+        # Download the image
+        image_data = blob_client.download_blob().readall()
+        image = Image.open(io.BytesIO(image_data))
+        
+        # Calculate new dimensions while maintaining aspect ratio
+        width, height = image.size
+        if width > max_dimension or height > max_dimension:
+            # Calculate scaling factor
+            scale = min(max_dimension / width, max_dimension / height)
+            new_width = int(width * scale)
+            new_height = int(height * scale)
+            
+            # Resize image using high-quality Lanczos filter
+            image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+            logging.info(f"Resized from {width}x{height} to {new_width}x{new_height}")
+        
+        # Save to bytes buffer with progressive quality reduction until under size limit
+        quality = 85  # Start with high quality
+        while quality > 20:  # Don't go below quality 20
+            output = io.BytesIO()
+            
+            # Save as JPEG (most efficient compression)
+            if image.mode in ('RGBA', 'LA', 'P'):
+                # Convert images with transparency to RGB
+                rgb_image = Image.new('RGB', image.size, (255, 255, 255))
+                if image.mode == 'P':
+                    image = image.convert('RGBA')
+                rgb_image.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
+                image = rgb_image
+            
+            image.save(output, format='JPEG', quality=quality, optimize=True)
+            output_size = output.tell()
+            
+            if output_size <= max_size_bytes:
+                # Size is acceptable, upload the downsized image
+                output.seek(0)
+                blob_client.upload_blob(output, overwrite=True, content_settings=ContentSettings(content_type='image/jpeg'))
+                logging.info(f"Downsized image from {current_size / 1024 / 1024:.2f} MB to {output_size / 1024 / 1024:.2f} MB (quality={quality})")
+                return True
+            
+            # Reduce quality for next iteration
+            quality -= 5
+        
+        # If we get here, even at lowest quality the image is too large
+        # This shouldn't happen in practice with reasonable max_dimension
+        logging.warning(f"Could not downsize {blob_client.blob_name} to under {max_size_bytes} bytes")
+        return False
+        
+    except Exception as e:
+        logging.error(f"Error downsizing image {blob_client.blob_name}: {str(e)}")
+        return False
 
 
 def analyze_image_quality(cv_client: ComputerVisionClient, image_url: str) -> Dict[str, Any]:
@@ -266,6 +346,9 @@ def select_best_photo(blob_service_client: BlobServiceClient,
             try:
                 # Get blob client and generate SAS URL for Computer Vision API access
                 blob_client = container_client.get_blob_client(blob.name)
+                
+                # Downsize the image if it's too large for Computer Vision API
+                downsize_image_if_needed(blob_client)
                 
                 # Generate SAS token for temporary read access (1 hour)
                 sas_token = generate_blob_sas(
