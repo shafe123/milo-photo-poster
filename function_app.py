@@ -51,6 +51,7 @@ MIN_ACCEPTABLE_SCORE = 30  # Minimum photo appeal score to accept (0-100 scale)
 POSTED_METADATA_KEY = "posted_date"  # Metadata key for tracking when a photo was posted
 MAX_IMAGE_SIZE_BYTES = 4 * 1024 * 1024  # 4 MB - Azure Computer Vision API limit for v3.2
 MAX_IMAGE_DIMENSION = 4096  # Maximum dimension to downsize images to
+MAX_BLUESKY_SIZE_BYTES = 900 * 1024  # 900 KB - Bluesky max is 976KB, use 900KB for safety margin
 
 # Caption generation constants
 CAPTION_PREFIX = "Daily Milo! 😾"  # Grumpy cat emoji to match Milo's personality
@@ -214,6 +215,79 @@ def downsize_image_if_needed(blob_client, max_size_bytes: int = MAX_IMAGE_SIZE_B
     except Exception as e:
         logging.error(f"Error downsizing image {blob_client.blob_name}: {str(e)}")
         return False
+
+
+def create_bluesky_optimized_image(image_data: bytes, max_size_bytes: int = MAX_BLUESKY_SIZE_BYTES) -> bytes:
+    """
+    Create a Bluesky-optimized version of an image.
+    Bluesky has a maximum file size limit of ~976KB, so we resize to stay under that.
+    
+    Args:
+        image_data: Original image bytes
+        max_size_bytes: Maximum allowed file size in bytes (default: 900KB for safety)
+        
+    Returns:
+        Optimized image bytes that fit within Bluesky's size limits
+    """
+    try:
+        # Load the image
+        image = Image.open(io.BytesIO(image_data))
+        
+        # Start with original dimensions
+        width, height = image.size
+        quality = 85  # Start with high quality
+        
+        # Try progressively smaller sizes until we're under the limit
+        while quality > 20:
+            output = io.BytesIO()
+            
+            # Convert RGBA/LA/P images to RGB for JPEG compatibility
+            if image.mode in ('RGBA', 'LA', 'P'):
+                rgb_image = Image.new('RGB', image.size, (255, 255, 255))
+                if image.mode == 'P':
+                    image = image.convert('RGBA')
+                rgb_image.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
+                image = rgb_image
+            
+            # Save with current quality
+            image.save(output, format='JPEG', quality=quality, optimize=True)
+            output_size = output.tell()
+            
+            if output_size <= max_size_bytes:
+                logging.info(f"Created Bluesky-optimized image: {output_size / 1024:.1f}KB (quality={quality})")
+                output.seek(0)
+                return output.read()
+            
+            # If still too large, try reducing dimensions by 10%
+            if quality <= 75 and output_size > max_size_bytes * 1.2:
+                new_width = int(width * 0.9)
+                new_height = int(height * 0.9)
+                image = Image.open(io.BytesIO(image_data))
+                
+                # Convert again if needed after reloading
+                if image.mode in ('RGBA', 'LA', 'P'):
+                    rgb_image = Image.new('RGB', image.size, (255, 255, 255))
+                    if image.mode == 'P':
+                        image = image.convert('RGBA')
+                    rgb_image.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
+                    image = rgb_image
+                
+                image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
+                width, height = new_width, new_height
+                logging.info(f"Resized to {width}x{height} for Bluesky optimization")
+            
+            # Reduce quality for next iteration
+            quality -= 5
+        
+        # If we couldn't get it small enough, return the smallest we got
+        logging.warning(f"Could not optimize image to under {max_size_bytes / 1024}KB, returning best effort")
+        output.seek(0)
+        return output.read()
+        
+    except Exception as e:
+        logging.error(f"Error creating Bluesky-optimized image: {str(e)}")
+        # Return original data as fallback
+        return image_data
 
 
 def analyze_image_quality(cv_client: ComputerVisionClient, image_url: str) -> Dict[str, Any]:
@@ -790,6 +864,7 @@ def post_to_postly(api_key: str, workspace_id: str,
                    image_data: bytes, caption: str, target_platforms: Optional[str] = None) -> bool:
     """
     Post image to Postly API.
+    Creates a Bluesky-optimized version of the image to ensure compatibility with all platforms.
     
     Args:
         api_key: Postly API key
@@ -802,21 +877,25 @@ def post_to_postly(api_key: str, workspace_id: str,
         True if successful, False otherwise
     """
     try:
-        # Step 1: Upload the file to Postly to get a URL
+        # Create Bluesky-optimized version of the image
+        # This ensures the image works on all platforms, including Bluesky's 976KB limit
+        optimized_image_data = create_bluesky_optimized_image(image_data)
+        
+        # Step 1: Upload the optimized file to Postly to get a URL
         # Reference: https://docs.postly.ai/upload-a-file-17449007e0
         upload_url = "https://openapi.postly.ai/v1/files"
         
         # Both upload and post endpoints use X-API-KEY authentication
         headers = {
             "X-API-KEY": api_key,
-            "X-File-Size": str(len(image_data))
+            "X-File-Size": str(len(optimized_image_data))
         }
         
         files = {
-            "file": ("milo.jpg", image_data, "image/jpeg")
+            "file": ("milo.jpg", optimized_image_data, "image/jpeg")
         }
         
-        logging.info("Uploading image to Postly")
+        logging.info(f"Uploading Bluesky-optimized image to Postly ({len(optimized_image_data) / 1024:.1f}KB)")
         upload_response = requests.post(upload_url, headers=headers, files=files)
         upload_response.raise_for_status()
         
