@@ -17,93 +17,95 @@ def test_random_sampling_when_exceeds_limit():
     """Test that photos are randomly sampled when count exceeds MAX_PHOTOS_TO_ANALYZE"""
     # Set MAX_PHOTOS_TO_ANALYZE to 5 for testing
     with patch('function_app.MAX_PHOTOS_TO_ANALYZE', 5):
-        # Create mock blob service client
-        mock_blob_service = MagicMock()
-        mock_container_client = MagicMock()
-        mock_blob_service.get_container_client.return_value = mock_container_client
-        
-        # Create 10 mock blobs
-        mock_blobs = []
-        for i in range(10):
-            mock_blob = Mock()
-            mock_blob.name = f"photo_{i}.jpg"
-            mock_blob.last_modified = datetime.utcnow()
-            mock_blobs.append(mock_blob)
-        
-        # Mock get_recent_blobs to return 10 blobs
-        with patch('function_app.get_recent_blobs', return_value=mock_blobs):
-            # Mock Computer Vision client
-            mock_cv_client = MagicMock()
+        with patch('function_app.downsize_image_if_needed', return_value=False):
+            # Create mock blob service client
+            mock_blob_service = MagicMock()
+            mock_container_client = MagicMock()
+            mock_blob_service.get_container_client.return_value = mock_container_client
             
-            # Mock analyze_image_quality to return a low score so no photo is selected
-            # This way we can just test the sampling logic
-            with patch('function_app.analyze_image_quality', return_value={
-                'description': {'captions': [{'text': 'test', 'confidence': 0.1}]},
-                'tags': [],
-                'adult': {'isAdultContent': False, 'isRacyContent': False},
-                'color': {'isBWImg': False},
-                'imageType': {'clipArtType': 0, 'lineDrawingType': 0}
-            }) as mock_analyze:
-                with patch('function_app.calculate_appeal_score', return_value=0):
-                    with patch('function_app.generate_blob_sas', return_value="sas_token"):
-                        mock_container_client.get_blob_client = MagicMock(side_effect=lambda name: Mock(url=f"http://test/{name}"))
-                        
-                        # Call select_best_photo
-                        result = select_best_photo(
-                            mock_blob_service,
-                            mock_cv_client,
-                            "test-container",
-                            7
-                        )
-                        
-                        # Verify that only 5 blobs were processed (analyzed)
-                        assert mock_analyze.call_count == 5
+            # Create 10 mock blobs
+            mock_blobs = []
+            for i in range(10):
+                mock_blob = Mock()
+                mock_blob.name = f"photo_{i}.jpg"
+                mock_blob.last_modified = datetime.utcnow()
+                mock_blobs.append(mock_blob)
+            
+            # Mock get_recent_blobs to return 10 blobs
+            with patch('function_app.get_recent_blobs', return_value=mock_blobs):
+                # Mock Computer Vision client
+                mock_cv_client = MagicMock()
+                
+                # Mock analyze_image_quality to return a low score so no photo is selected
+                # This way we can just test the sampling logic
+                with patch('function_app.analyze_image_quality', return_value={
+                    'description': {'captions': [{'text': 'test', 'confidence': 0.1}]},
+                    'tags': [],
+                    'adult': {'isAdultContent': False, 'isRacyContent': False},
+                    'color': {'isBWImg': False},
+                    'imageType': {'clipArtType': 0, 'lineDrawingType': 0}
+                }) as mock_analyze:
+                    with patch('function_app.calculate_appeal_score', return_value=0):
+                        with patch('function_app.generate_blob_sas', return_value="sas_token"):
+                            mock_container_client.get_blob_client = MagicMock(side_effect=lambda name: Mock(url=f"http://test/{name}"))
+                            
+                            # Call select_best_photo
+                            result = select_best_photo(
+                                mock_blob_service,
+                                mock_cv_client,
+                                "test-container",
+                                7
+                            )
+                            
+                            # Verify that only 5 blobs were processed (analyzed)
+                            assert mock_analyze.call_count == 5
 
 
 def test_no_sampling_when_under_limit():
     """Test that all photos are analyzed when count is under MAX_PHOTOS_TO_ANALYZE"""
     # Set MAX_PHOTOS_TO_ANALYZE to 10 for testing
     with patch('function_app.MAX_PHOTOS_TO_ANALYZE', 10):
-        # Create mock blob service client
-        mock_blob_service = MagicMock()
-        mock_container_client = MagicMock()
-        mock_blob_service.get_container_client.return_value = mock_container_client
-        
-        # Create 5 mock blobs (less than limit)
-        mock_blobs = []
-        for i in range(5):
-            mock_blob = Mock()
-            mock_blob.name = f"photo_{i}.jpg"
-            mock_blob.last_modified = datetime.utcnow()
-            mock_blobs.append(mock_blob)
-        
-        # Mock get_recent_blobs to return 5 blobs
-        with patch('function_app.get_recent_blobs', return_value=mock_blobs):
-            # Mock Computer Vision client
-            mock_cv_client = MagicMock()
+        with patch('function_app.downsize_image_if_needed', return_value=False):
+            # Create mock blob service client
+            mock_blob_service = MagicMock()
+            mock_container_client = MagicMock()
+            mock_blob_service.get_container_client.return_value = mock_container_client
             
-            # Mock analyze_image_quality
-            with patch('function_app.analyze_image_quality', return_value={
-                'description': {'captions': [{'text': 'test', 'confidence': 0.1}]},
-                'tags': [],
-                'adult': {'isAdultContent': False, 'isRacyContent': False},
-                'color': {'isBWImg': False},
-                'imageType': {'clipArtType': 0, 'lineDrawingType': 0}
-            }) as mock_analyze:
-                with patch('function_app.calculate_appeal_score', return_value=0):
-                    with patch('function_app.generate_blob_sas', return_value="sas_token"):
-                        mock_container_client.get_blob_client = MagicMock(side_effect=lambda name: Mock(url=f"http://test/{name}"))
-                        
-                        # Call select_best_photo
-                        result = select_best_photo(
-                            mock_blob_service,
-                            mock_cv_client,
-                            "test-container",
-                            7
-                        )
-                        
-                        # Verify that all 5 blobs were processed
-                        assert mock_analyze.call_count == 5
+            # Create 5 mock blobs (less than limit)
+            mock_blobs = []
+            for i in range(5):
+                mock_blob = Mock()
+                mock_blob.name = f"photo_{i}.jpg"
+                mock_blob.last_modified = datetime.utcnow()
+                mock_blobs.append(mock_blob)
+            
+            # Mock get_recent_blobs to return 5 blobs
+            with patch('function_app.get_recent_blobs', return_value=mock_blobs):
+                # Mock Computer Vision client
+                mock_cv_client = MagicMock()
+                
+                # Mock analyze_image_quality
+                with patch('function_app.analyze_image_quality', return_value={
+                    'description': {'captions': [{'text': 'test', 'confidence': 0.1}]},
+                    'tags': [],
+                    'adult': {'isAdultContent': False, 'isRacyContent': False},
+                    'color': {'isBWImg': False},
+                    'imageType': {'clipArtType': 0, 'lineDrawingType': 0}
+                }) as mock_analyze:
+                    with patch('function_app.calculate_appeal_score', return_value=0):
+                        with patch('function_app.generate_blob_sas', return_value="sas_token"):
+                            mock_container_client.get_blob_client = MagicMock(side_effect=lambda name: Mock(url=f"http://test/{name}"))
+                            
+                            # Call select_best_photo
+                            result = select_best_photo(
+                                mock_blob_service,
+                                mock_cv_client,
+                                "test-container",
+                                7
+                            )
+                            
+                            # Verify that all 5 blobs were processed
+                            assert mock_analyze.call_count == 5
 
 
 def test_random_sampling_variability():
@@ -140,12 +142,60 @@ def test_boundary_condition_exact_limit():
     """Test that all photos are analyzed when count equals MAX_PHOTOS_TO_ANALYZE"""
     # Set MAX_PHOTOS_TO_ANALYZE to 5 for testing
     with patch('function_app.MAX_PHOTOS_TO_ANALYZE', 5):
+        with patch('function_app.downsize_image_if_needed', return_value=False):
+            # Create mock blob service client
+            mock_blob_service = MagicMock()
+            mock_container_client = MagicMock()
+            mock_blob_service.get_container_client.return_value = mock_container_client
+            
+            # Create exactly 5 mock blobs (equal to limit)
+            mock_blobs = []
+            for i in range(5):
+                mock_blob = Mock()
+                mock_blob.name = f"photo_{i}.jpg"
+                mock_blob.last_modified = datetime.utcnow()
+                mock_blobs.append(mock_blob)
+            
+            # Mock get_recent_blobs to return 5 blobs
+            with patch('function_app.get_recent_blobs', return_value=mock_blobs):
+                # Mock Computer Vision client
+                mock_cv_client = MagicMock()
+                
+                # Mock analyze_image_quality
+                with patch('function_app.analyze_image_quality', return_value={
+                    'description': {'captions': [{'text': 'test', 'confidence': 0.1}]},
+                    'tags': [],
+                    'adult': {'isAdultContent': False, 'isRacyContent': False},
+                    'color': {'isBWImg': False},
+                    'imageType': {'clipArtType': 0, 'lineDrawingType': 0}
+                }) as mock_analyze:
+                    with patch('function_app.calculate_appeal_score', return_value=0):
+                        with patch('function_app.generate_blob_sas', return_value="sas_token"):
+                            mock_container_client.get_blob_client = MagicMock(side_effect=lambda name: Mock(url=f"http://test/{name}"))
+                            
+                            # Call select_best_photo
+                            result = select_best_photo(
+                                mock_blob_service,
+                                mock_cv_client,
+                                "test-container",
+                                7
+                            )
+                            
+                            # Verify that all 5 blobs were processed (no sampling needed)
+                            assert mock_analyze.call_count == 5
+
+
+def test_duplicate_avoidance_filters_posted_photos():
+    """Test that already-posted photos are filtered out"""
+    from function_app import is_blob_posted, mark_blob_as_posted
+    
+    with patch('function_app.downsize_image_if_needed', return_value=False):
         # Create mock blob service client
         mock_blob_service = MagicMock()
         mock_container_client = MagicMock()
         mock_blob_service.get_container_client.return_value = mock_container_client
         
-        # Create exactly 5 mock blobs (equal to limit)
+        # Create mock blobs - some posted, some not
         mock_blobs = []
         for i in range(5):
             mock_blob = Mock()
@@ -153,103 +203,57 @@ def test_boundary_condition_exact_limit():
             mock_blob.last_modified = datetime.utcnow()
             mock_blobs.append(mock_blob)
         
-        # Mock get_recent_blobs to return 5 blobs
+        # Mock blob clients with metadata
+        def mock_get_blob_client(name):
+            blob_client = MagicMock()
+            blob_client.blob_name = name
+            
+            # Simulate some photos as already posted
+            if name in ["photo_0.jpg", "photo_2.jpg"]:
+                # These were "posted" recently
+                properties = Mock()
+                properties.metadata = {"posted_date": datetime.utcnow().isoformat()}
+                blob_client.get_blob_properties.return_value = properties
+            else:
+                # These haven't been posted
+                properties = Mock()
+                properties.metadata = {}
+                blob_client.get_blob_properties.return_value = properties
+            
+            blob_client.url = f"http://test/{name}"
+            return blob_client
+        
+        mock_container_client.get_blob_client = mock_get_blob_client
+        
+        # Mock get_recent_blobs to return our test blobs
         with patch('function_app.get_recent_blobs', return_value=mock_blobs):
             # Mock Computer Vision client
             mock_cv_client = MagicMock()
             
             # Mock analyze_image_quality
             with patch('function_app.analyze_image_quality', return_value={
-                'description': {'captions': [{'text': 'test', 'confidence': 0.1}]},
+                'description': 'test',
+                'confidence': 0.1,
                 'tags': [],
-                'adult': {'isAdultContent': False, 'isRacyContent': False},
-                'color': {'isBWImg': False},
-                'imageType': {'clipArtType': 0, 'lineDrawingType': 0}
+                'is_adult_content': False,
+                'is_racy_content': False,
+                'dominant_colors': [],
+                'is_bw': False,
+                'is_clip_art': 0,
+                'is_line_drawing': 0
             }) as mock_analyze:
                 with patch('function_app.calculate_appeal_score', return_value=0):
                     with patch('function_app.generate_blob_sas', return_value="sas_token"):
-                        mock_container_client.get_blob_client = MagicMock(side_effect=lambda name: Mock(url=f"http://test/{name}"))
-                        
-                        # Call select_best_photo
-                        result = select_best_photo(
-                            mock_blob_service,
-                            mock_cv_client,
-                            "test-container",
-                            7
-                        )
-                        
-                        # Verify that all 5 blobs were processed (no sampling needed)
-                        assert mock_analyze.call_count == 5
-
-
-def test_duplicate_avoidance_filters_posted_photos():
-    """Test that already-posted photos are filtered out"""
-    from function_app import is_blob_posted, mark_blob_as_posted
-    
-    # Create mock blob service client
-    mock_blob_service = MagicMock()
-    mock_container_client = MagicMock()
-    mock_blob_service.get_container_client.return_value = mock_container_client
-    
-    # Create mock blobs - some posted, some not
-    mock_blobs = []
-    for i in range(5):
-        mock_blob = Mock()
-        mock_blob.name = f"photo_{i}.jpg"
-        mock_blob.last_modified = datetime.utcnow()
-        mock_blobs.append(mock_blob)
-    
-    # Mock blob clients with metadata
-    def mock_get_blob_client(name):
-        blob_client = MagicMock()
-        blob_client.blob_name = name
-        
-        # Simulate some photos as already posted
-        if name in ["photo_0.jpg", "photo_2.jpg"]:
-            # These were "posted" recently
-            properties = Mock()
-            properties.metadata = {"posted_date": datetime.utcnow().isoformat()}
-            blob_client.get_blob_properties.return_value = properties
-        else:
-            # These haven't been posted
-            properties = Mock()
-            properties.metadata = {}
-            blob_client.get_blob_properties.return_value = properties
-        
-        blob_client.url = f"http://test/{name}"
-        return blob_client
-    
-    mock_container_client.get_blob_client = mock_get_blob_client
-    
-    # Mock get_recent_blobs to return our test blobs
-    with patch('function_app.get_recent_blobs', return_value=mock_blobs):
-        # Mock Computer Vision client
-        mock_cv_client = MagicMock()
-        
-        # Mock analyze_image_quality
-        with patch('function_app.analyze_image_quality', return_value={
-            'description': 'test',
-            'confidence': 0.1,
-            'tags': [],
-            'is_adult_content': False,
-            'is_racy_content': False,
-            'dominant_colors': [],
-            'is_bw': False,
-            'is_clip_art': 0,
-            'is_line_drawing': 0
-        }) as mock_analyze:
-            with patch('function_app.calculate_appeal_score', return_value=0):
-                with patch('function_app.generate_blob_sas', return_value="sas_token"):
-                    with patch('function_app.POSTED_HISTORY_DAYS', 30):
-                        # Call select_best_photo
-                        result = select_best_photo(
-                            mock_blob_service,
-                            mock_cv_client,
-                            "test-container",
-                            7
-                        )
-                        
-                        # Should only analyze 3 photos (photo_1, photo_3, photo_4)
+                        with patch('function_app.POSTED_HISTORY_DAYS', 30):
+                            # Call select_best_photo
+                            result = select_best_photo(
+                                mock_blob_service,
+                                mock_cv_client,
+                                "test-container",
+                                7
+                            )
+                            
+                            # Should only analyze 3 photos (photo_1, photo_3, photo_4)
                         # photo_0 and photo_2 should be filtered out as posted
                         assert mock_analyze.call_count == 3
 
