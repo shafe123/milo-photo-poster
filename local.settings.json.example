@@ -17,6 +17,15 @@
     "POSTLY_BLUESKY_ACCOUNT_ID": "did:plc:your-bluesky-did-here",
     "POSTLY_INSTAGRAM_ACCOUNT_ID": "your-instagram-account-id-here",
     "DAYS_TO_CHECK": "7",
-    "MAX_PHOTOS_TO_ANALYZE": "10"
+    "MAX_PHOTOS_TO_ANALYZE": "10",
+    "CUSTOM_VISION_PREDICTION_ENDPOINT": "https://your-customvision-resource.cognitiveservices.azure.com/",
+    "CUSTOM_VISION_PREDICTION_KEY": "your-custom-vision-prediction-key",
+    "CUSTOM_VISION_PROJECT_ID": "your-custom-vision-project-id",
+    "CUSTOM_VISION_ITERATION_NAME": "Iteration1",
+    "CUSTOM_VISION_TRAINING_ENDPOINT": "https://your-customvision-resource.cognitiveservices.azure.com/",
+    "CUSTOM_VISION_TRAINING_KEY": "your-custom-vision-training-key",
+    "CUSTOM_VISION_PREDICTION_RESOURCE_ID": "/subscriptions/your-sub-id/resourceGroups/your-rg/providers/Microsoft.CognitiveServices/accounts/your-cv-resource",
+    "MILO_CONFIDENCE_THRESHOLD": "0.7",
+    "REQUIRE_MILO_IN_PHOTO": "true"
   }
 }

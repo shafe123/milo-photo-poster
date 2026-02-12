@@ -50,11 +50,21 @@ DAYS_TO_CHECK = int(os.environ.get("DAYS_TO_CHECK", "7"))
 MAX_PHOTOS_TO_ANALYZE = int(os.environ.get("MAX_PHOTOS_TO_ANALYZE", "10"))  # Limit to avoid rate limits
 POSTED_HISTORY_DAYS = int(os.environ.get("POSTED_HISTORY_DAYS", "30"))  # Days to remember posted photos
 
+# Custom Vision configuration for Milo detection
+CUSTOM_VISION_PREDICTION_ENDPOINT = os.environ.get("CUSTOM_VISION_PREDICTION_ENDPOINT")  # e.g., https://xxxxx.cognitiveservices.azure.com/
+CUSTOM_VISION_PREDICTION_KEY = os.environ.get("CUSTOM_VISION_PREDICTION_KEY")
+CUSTOM_VISION_PROJECT_ID = os.environ.get("CUSTOM_VISION_PROJECT_ID")
+CUSTOM_VISION_ITERATION_NAME = os.environ.get("CUSTOM_VISION_ITERATION_NAME", "Iteration1")
+MILO_CONFIDENCE_THRESHOLD = float(os.environ.get("MILO_CONFIDENCE_THRESHOLD", "0.7"))  # Minimum confidence to consider Milo present
+REQUIRE_MILO_IN_PHOTO = os.environ.get("REQUIRE_MILO_IN_PHOTO", "true").lower() == "true"  # Filter out photos without Milo
+
 # Constants
 SUPPORTED_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
 MIN_ACCEPTABLE_SCORE = 30  # Minimum photo appeal score to accept (0-100 scale)
 POSTED_METADATA_KEY = "posted_date"  # Metadata key for tracking when a photo was posted
-MAX_IMAGE_SIZE_BYTES = 1024 * 1024 * 0.90  # 1 MB - Safe size for all platforms, with buffer space
+MILO_DETECTED_KEY = "milo_detected"  # Metadata key for caching Milo detection result
+MILO_CONFIDENCE_KEY = "milo_confidence"  # Metadata key for storing Milo detection confidence
+MAX_IMAGE_SIZE_BYTES = int(1024 * 1024 * 0.90)  # ~900 KB - Safe size for all platforms, with buffer space
 MAX_IMAGE_DIMENSION = 4096  # Maximum dimension to downsize images to
 
 # Caption generation constants
@@ -301,6 +311,84 @@ def calculate_appeal_score(analysis: Dict[str, Any]) -> float:
     return max(0, min(100, score))
 
 
+def check_milo_in_photo(blob_client, image_url: str) -> Tuple[bool, float]:
+    """
+    Check if Milo is present in a photo using Azure Custom Vision.
+    Uses cached metadata if available to avoid repeated API calls.
+    
+    Args:
+        blob_client: Azure Blob client for the specific blob
+        image_url: URL of the image to analyze
+        
+    Returns:
+        Tuple of (is_milo_present: bool, confidence: float)
+    """
+    # Check if we have a cached result in blob metadata
+    try:
+        properties = blob_client.get_blob_properties()
+        metadata = properties.metadata
+        
+        if MILO_DETECTED_KEY in metadata:
+            cached_result = metadata[MILO_DETECTED_KEY].lower() == "true"
+            cached_confidence = float(metadata.get(MILO_CONFIDENCE_KEY, "0"))
+            logging.info(f"Using cached Milo detection for {blob_client.blob_name}: {cached_result} (confidence: {cached_confidence:.2f})")
+            return cached_result, cached_confidence
+    except Exception as e:
+        logging.warning(f"Error reading cached Milo detection: {str(e)}")
+    
+    # No cached result, call Custom Vision API
+    if not all([CUSTOM_VISION_PREDICTION_ENDPOINT, CUSTOM_VISION_PREDICTION_KEY, CUSTOM_VISION_PROJECT_ID]):
+        logging.warning("Custom Vision not configured, assuming Milo is present")
+        return True, 1.0
+    
+    try:
+        # Call Custom Vision Prediction API
+        prediction_url = f"{CUSTOM_VISION_PREDICTION_ENDPOINT}/customvision/v3.0/Prediction/{CUSTOM_VISION_PROJECT_ID}/classify/iterations/{CUSTOM_VISION_ITERATION_NAME}/url"
+        
+        headers = {
+            "Prediction-Key": CUSTOM_VISION_PREDICTION_KEY,
+            "Content-Type": "application/json"
+        }
+        
+        body = {"Url": image_url}
+        
+        logging.info(f"Calling Custom Vision to detect Milo in {blob_client.blob_name}")
+        response = requests.post(prediction_url, headers=headers, json=body)
+        response.raise_for_status()
+        
+        predictions = response.json().get("predictions", [])
+        
+        # Look for tags where Milo is present: "milo" or "both"
+        # Ignore "emilio" (Emilio only) and "neither" (no cats)
+        milo_confidence = 0.0
+        for prediction in predictions:
+            tag_name = prediction.get("tagName", "").lower()
+            if tag_name in ["milo", "both"]:
+                milo_confidence = max(milo_confidence, prediction.get("probability", 0.0))
+        
+        is_milo_present = milo_confidence >= MILO_CONFIDENCE_THRESHOLD
+        
+        logging.info(f"Custom Vision result for {blob_client.blob_name}: Milo confidence={milo_confidence:.2f}, present={is_milo_present}")
+        
+        # Cache the result in blob metadata
+        try:
+            properties = blob_client.get_blob_properties()
+            metadata = properties.metadata or {}
+            metadata[MILO_DETECTED_KEY] = "true" if is_milo_present else "false"
+            metadata[MILO_CONFIDENCE_KEY] = f"{milo_confidence:.4f}"
+            blob_client.set_blob_metadata(metadata)
+            logging.info(f"Cached Milo detection result in metadata for {blob_client.blob_name}")
+        except Exception as e:
+            logging.warning(f"Error caching Milo detection result: {str(e)}")
+        
+        return is_milo_present, milo_confidence
+        
+    except Exception as e:
+        logging.error(f"Error detecting Milo with Custom Vision: {str(e)}")
+        # On error, assume Milo is present to avoid filtering out photos unnecessarily
+        return True, 1.0
+
+
 def select_best_photo(blob_service_client: BlobServiceClient, 
                      cv_client: ComputerVisionClient,
                      container_name: str,
@@ -366,6 +454,14 @@ def select_best_photo(blob_service_client: BlobServiceClient,
                     expiry=datetime.utcnow() + timedelta(hours=1)
                 )
                 blob_url = f"{blob_client.url}?{sas_token}"
+                
+                # Check if Milo is in the photo (if required)
+                if REQUIRE_MILO_IN_PHOTO:
+                    is_milo_present, milo_confidence = check_milo_in_photo(blob_client, blob_url)
+                    if not is_milo_present:
+                        logging.info(f"Skipping {blob.name}: Milo not detected (confidence: {milo_confidence:.2f})")
+                        continue
+                    logging.info(f"Milo detected in {blob.name} (confidence: {milo_confidence:.2f})")
                 
                 # Analyze the image
                 logging.info(f"Analyzing blob: {blob.name}")
