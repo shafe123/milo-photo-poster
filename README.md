@@ -295,45 +295,29 @@ func azure functionapp publish milo-photo-poster
 4. Sign in to your Azure account
 5. Right-click your Function App and select "Deploy to Function App"
 
-### Option 3: Deploy via GitHub Actions
-Create `.github/workflows/deploy.yml`:
+### Option 3: Deploy via GitHub Actions (Automated)
 
-```yaml
-name: Deploy to Azure Functions
+A GitHub Actions workflow is pre-configured in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) that automatically deploys to your Flex Consumption Function App when you push to the `main` branch.
 
-on:
-  push:
-    branches:
-      - main
+**Key features of this workflow:**
+- ✓ Uses Azure Functions Core Tools for reliable Flex Consumption deployment
+- ✓ Proper Python dependency handling with virtual environment
+- ✓ OIDC authentication (no publish profiles needed)
+- ✓ Automatically triggers on push to main branch
+- ✓ Can also be manually triggered via workflow_dispatch
 
-env:
-  AZURE_FUNCTIONAPP_NAME: milo-photo-poster
-  AZURE_FUNCTIONAPP_PACKAGE_PATH: '.'
-  PYTHON_VERSION: '3.11'
+**The workflow is already configured and will automatically deploy when you push to main.**
 
-jobs:
-  build-and-deploy:
-    runs-on: ubuntu-latest
-    steps:
-    - name: 'Checkout GitHub Action'
-      uses: actions/checkout@v3
-
-    - name: Setup Python ${{ env.PYTHON_VERSION }}
-      uses: actions/setup-python@v4
-      with:
-        python-version: ${{ env.PYTHON_VERSION }}
-
-    - name: 'Install dependencies'
-      run: |
-        pip install -r requirements.txt
-
-    - name: 'Deploy to Azure Functions'
-      uses: Azure/functions-action@v1
-      with:
-        app-name: ${{ env.AZURE_FUNCTIONAPP_NAME }}
-        package: ${{ env.AZURE_FUNCTIONAPP_PACKAGE_PATH }}
-        publish-profile: ${{ secrets.AZURE_FUNCTIONAPP_PUBLISH_PROFILE }}
+**Note**: Application settings (API keys, connection strings) are **not** included in the deployment. Manage them separately using:
+```powershell
+.\deploy-settings.ps1
 ```
+
+To manually trigger a deployment without pushing code:
+1. Go to your repository on GitHub
+2. Click "Actions" tab
+3. Select "Deploy to Azure Functions (Flex Consumption)"
+4. Click "Run workflow"
 
 ## Monitoring
 
@@ -464,6 +448,32 @@ The `POSTLY_TARGET_PLATFORMS` environment variable should contain comma-separate
 **Estimated Monthly Cost**: $5-15 depending on AI image generation frequency
 
 ## Troubleshooting
+
+### Deployment Issues
+
+#### "Failed to get status of deployment" (VS Code Extension)
+This is a known issue with Flex Consumption plans and the VS Code extension. **Solution:**
+- Use `func azure functionapp publish milo-photo-poster` instead
+- Or use the `.\deploy.ps1` script
+- Check Azure Portal - the deployment may have succeeded despite the error
+
+#### GitHub Actions Deployment Failures
+If the GitHub Actions workflow fails:
+1. Verify your Azure credentials (client-id, tenant-id, subscription-id) are correctly set in repository secrets
+2. Check that the Function App name matches in the workflow file
+3. Ensure Azure Functions Core Tools can access your subscription
+4. Review the workflow logs in the "Actions" tab on GitHub
+
+#### "No package found" or Build Errors
+- Ensure `requirements.txt` is in the repository root
+- Verify all dependencies are compatible with Python 3.11
+- Check that `.funcignore` isn't excluding necessary files
+
+#### Settings Not Applied After Deployment
+Application settings are managed separately from code deployment:
+- Run `.\deploy-settings.ps1` after deploying code
+- Verify settings in Azure Portal → Function App → Configuration
+- Restart the Function App if settings were just updated
 
 ### Function Not Triggering
 - Check the timer expression in `function_app.py`
