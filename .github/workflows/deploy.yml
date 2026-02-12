@@ -1,0 +1,68 @@
+name: Deploy to Azure Functions (Flex Consumption)
+
+on:
+    push:
+        branches:
+            - main
+    workflow_dispatch:
+
+env:
+    AZURE_FUNCTIONAPP_NAME: "milo-photo-poster"
+    PYTHON_VERSION: "3.11"
+
+jobs:
+    build-and-deploy:
+        runs-on: ubuntu-latest
+        permissions:
+            id-token: write # Required for OIDC authentication
+            contents: read
+
+        steps:
+            - name: "Checkout repository"
+              uses: actions/checkout@v4
+
+            - name: "Setup Python ${{ env.PYTHON_VERSION }}"
+              uses: actions/setup-python@v5
+              with:
+                  python-version: ${{ env.PYTHON_VERSION }}
+
+            - name: "Create and activate virtual environment"
+              run: |
+                  python -m venv .venv
+                  source .venv/bin/activate
+                  echo "Virtual environment activated"
+
+            - name: "Install dependencies"
+              run: |
+                  python -m pip install --upgrade pip
+                  pip install -r requirements.txt --target=".python_packages/lib/site-packages"
+
+            - name: "Login to Azure"
+              uses: azure/login@v2
+              with:
+                  client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_4759DD04EF84428C80532C3FC114B339 }}
+                  tenant-id: ${{ secrets.AZUREAPPSERVICE_TENANTID_A99B25B193D944BBA3F89FECF72D7B05 }}
+                  subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_01D91C344C0E401F82C1E310A3BACCE4 }}
+
+            - name: "Install Azure Functions Core Tools"
+              run: |
+                  curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg
+                  sudo mv microsoft.gpg /etc/apt/trusted.gpg.d/microsoft.gpg
+                  sudo sh -c 'echo "deb [arch=amd64] https://packages.microsoft.com/repos/microsoft-ubuntu-$(lsb_release -cs)-prod $(lsb_release -cs) main" > /etc/apt/sources.list.d/dotnetdev.list'
+                  sudo apt-get update
+                  sudo apt-get install azure-functions-core-tools-4
+
+            - name: "Deploy to Azure Functions (Flex Consumption)"
+              run: |
+                  func azure functionapp publish ${{ env.AZURE_FUNCTIONAPP_NAME }} --python
+              env:
+                  AZURE_SUBSCRIPTION_ID: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_01D91C344C0E401F82C1E310A3BACCE4 }}
+
+            - name: "Deployment Summary"
+              if: success()
+              run: |
+                  echo "✓ Deployment completed successfully!"
+                  echo "Function App: ${{ env.AZURE_FUNCTIONAPP_NAME }}"
+                  echo "Python Version: ${{ env.PYTHON_VERSION }}"
+                  echo ""
+                  echo "Note: Application settings are managed separately via deploy-settings.ps1"

@@ -64,6 +64,7 @@ MIN_ACCEPTABLE_SCORE = 30  # Minimum photo appeal score to accept (0-100 scale)
 POSTED_METADATA_KEY = "posted_date"  # Metadata key for tracking when a photo was posted
 MILO_DETECTED_KEY = "milo_detected"  # Metadata key for caching Milo detection result
 MILO_CONFIDENCE_KEY = "milo_confidence"  # Metadata key for storing Milo detection confidence
+MILO_ITERATION_KEY = "milo_iteration"  # Metadata key for tracking which Custom Vision iteration was used
 MAX_IMAGE_SIZE_BYTES = int(1024 * 1024 * 0.90)  # ~900 KB - Safe size for all platforms, with buffer space
 MAX_IMAGE_DIMENSION = 4096  # Maximum dimension to downsize images to
 
@@ -329,10 +330,16 @@ def check_milo_in_photo(blob_client, image_url: str) -> Tuple[bool, float]:
         metadata = properties.metadata
         
         if MILO_DETECTED_KEY in metadata:
-            cached_result = metadata[MILO_DETECTED_KEY].lower() == "true"
-            cached_confidence = float(metadata.get(MILO_CONFIDENCE_KEY, "0"))
-            logging.info(f"Using cached Milo detection for {blob_client.blob_name}: {cached_result} (confidence: {cached_confidence:.2f})")
-            return cached_result, cached_confidence
+            cached_iteration = metadata.get(MILO_ITERATION_KEY, "")
+            
+            # Only use cache if it's from the same iteration
+            if cached_iteration == CUSTOM_VISION_ITERATION_NAME:
+                cached_result = metadata[MILO_DETECTED_KEY].lower() == "true"
+                cached_confidence = float(metadata.get(MILO_CONFIDENCE_KEY, "0"))
+                logging.info(f"Using cached Milo detection for {blob_client.blob_name}: {cached_result} (confidence: {cached_confidence:.2f}, iteration: {cached_iteration})")
+                return cached_result, cached_confidence
+            else:
+                logging.info(f"Cached result for {blob_client.blob_name} is from iteration '{cached_iteration}', current is '{CUSTOM_VISION_ITERATION_NAME}' - re-analyzing")
     except Exception as e:
         logging.warning(f"Error reading cached Milo detection: {str(e)}")
     
@@ -343,7 +350,9 @@ def check_milo_in_photo(blob_client, image_url: str) -> Tuple[bool, float]:
     
     try:
         # Call Custom Vision Prediction API
-        prediction_url = f"{CUSTOM_VISION_PREDICTION_ENDPOINT}/customvision/v3.0/Prediction/{CUSTOM_VISION_PROJECT_ID}/classify/iterations/{CUSTOM_VISION_ITERATION_NAME}/url"
+        # Strip trailing slash from endpoint to avoid double slashes in URL
+        endpoint = CUSTOM_VISION_PREDICTION_ENDPOINT.rstrip('/')
+        prediction_url = f"{endpoint}/customvision/v3.0/Prediction/{CUSTOM_VISION_PROJECT_ID}/classify/iterations/{CUSTOM_VISION_ITERATION_NAME}/url"
         
         headers = {
             "Prediction-Key": CUSTOM_VISION_PREDICTION_KEY,
@@ -376,8 +385,9 @@ def check_milo_in_photo(blob_client, image_url: str) -> Tuple[bool, float]:
             metadata = properties.metadata or {}
             metadata[MILO_DETECTED_KEY] = "true" if is_milo_present else "false"
             metadata[MILO_CONFIDENCE_KEY] = f"{milo_confidence:.4f}"
+            metadata[MILO_ITERATION_KEY] = CUSTOM_VISION_ITERATION_NAME
             blob_client.set_blob_metadata(metadata)
-            logging.info(f"Cached Milo detection result in metadata for {blob_client.blob_name}")
+            logging.info(f"Cached Milo detection result in metadata for {blob_client.blob_name} (iteration: {CUSTOM_VISION_ITERATION_NAME})")
         except Exception as e:
             logging.warning(f"Error caching Milo detection result: {str(e)}")
         
