@@ -764,7 +764,7 @@ def get_current_weather() -> Optional[Dict[str, Any]]:
         return None
     
     try:
-        url = "http://api.openweathermap.org/data/2.5/weather"
+        url = "https://api.openweathermap.org/data/2.5/weather"
         params = {
             "q": WEATHER_LOCATION,
             "appid": WEATHER_API_KEY,

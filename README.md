@@ -34,7 +34,7 @@ Before deploying this application, you'll need:
 4. **Azure OpenAI Service** - With two deployments:
    - **DALL-E 3** for AI image generation
    - **GPT-4 Vision** (gpt-4o or gpt-4-turbo-vision) for analyzing Milo's appearance
-5. **OpenWeatherMap API Key** - [Sign up for free](https://openweathermap.org/api) for real-time weather data in captions
+5. **OpenWeatherMap API Key (optional)** - [Sign up for free](https://openweathermap.org/api) for real-time weather data in captions
 6. **Postly Account** - [Sign up at Postly.ai](https://postly.ai/) and obtain API credentials
 7. **Azure Functions Core Tools** (for local development) - [Installation guide](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
 8. **Python 3.9-3.11** - Azure Functions currently supports Python 3.9, 3.10, and 3.11
