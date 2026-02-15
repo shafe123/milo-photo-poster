@@ -278,6 +278,69 @@ def analyze_image_quality(cv_client: ComputerVisionClient, image_url: str) -> Di
         raise
 
 
+def analyze_image_with_vision(text_client: AzureOpenAI, text_model: str, image_url: str) -> str:
+    """
+    Analyze image using GPT-4 Vision to get detailed description of cat's activity and surroundings.
+    
+    Args:
+        text_client: Azure OpenAI client with vision capabilities
+        text_model: Name of the GPT-4 Vision model
+        image_url: URL of the image to analyze
+        
+    Returns:
+        Detailed description of what the cat is doing and the surroundings
+    """
+    try:
+        logging.info(f"Analyzing image with GPT-4 Vision for detailed activity description")
+        
+        content: list[dict[str, object]] = [
+            {
+                "type": "text",
+                "text": (
+                    "Analyze this photo of Milo the cat. Focus on what the cat is doing and provide "
+                    "specific details about the cat's activity or surroundings. Include:\n"
+                    "- What the cat is doing (sitting, sleeping, playing, staring, etc.)\n"
+                    "- The cat's posture, body language, or expression\n"
+                    "- Key details about the surroundings or environment\n"
+                    "- Any interesting context that would help create an engaging social media caption\n\n"
+                    "Be descriptive but concise (1-2 sentences). Focus on observable actions and details."
+                )
+            },
+            {
+                "type": "image_url",
+                "image_url": {"url": image_url}
+            }
+        ]
+        
+        response = text_client.chat.completions.create(
+            model=text_model,
+            messages=[
+                {
+                    "role": "system",
+                    "content": "You are an expert at analyzing cat photos and describing their activities and surroundings in an engaging way."
+                },
+                {
+                    "role": "user",
+                    "content": content
+                } # type: ignore
+            ],
+            max_tokens=200
+        )
+        
+        description = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
+        
+        if description:
+            logging.info(f"GPT-4 Vision description: {description}")
+            return description
+        else:
+            logging.warning("GPT-4 Vision returned empty description")
+            return ""
+            
+    except Exception as e:
+        logging.warning(f"Error analyzing image with GPT-4 Vision: {str(e)}")
+        return ""
+
+
 def calculate_appeal_score(analysis: Dict[str, Any]) -> float:
     """
     Calculate an appeal score for the image based on analysis results.
@@ -406,6 +469,8 @@ def check_milo_in_photo(blob_client, image_url: str) -> Tuple[bool, float]:
 
 def select_best_photo(blob_service_client: BlobServiceClient, 
                      cv_client: ComputerVisionClient,
+                     text_client: AzureOpenAI,
+                     text_model: str,
                      container_name: str,
                      days: int) -> Optional[Tuple[bytes, str, str]]:
     """
@@ -414,6 +479,8 @@ def select_best_photo(blob_service_client: BlobServiceClient,
     Args:
         blob_service_client: Azure Blob Storage client
         cv_client: Computer Vision client
+        text_client: Azure OpenAI client for GPT-4 Vision analysis
+        text_model: Name of the GPT-4 Vision model
         container_name: Name of the blob container
         days: Number of days to look back
         
@@ -450,6 +517,7 @@ def select_best_photo(blob_service_client: BlobServiceClient,
         best_blob = None
         best_score = -1
         best_analysis = None
+        best_blob_url = None  # Store the URL for the best blob
         
         for blob in blobs_to_analyze:
             try:
@@ -490,6 +558,7 @@ def select_best_photo(blob_service_client: BlobServiceClient,
                     best_score = score
                     best_blob = blob
                     best_analysis = analysis
+                    best_blob_url = blob_url  # Save the URL for later GPT-4 Vision analysis
                     
             except Exception as e:
                 logging.warning(f"Error processing blob {blob.name}: {str(e)}")
@@ -499,7 +568,18 @@ def select_best_photo(blob_service_client: BlobServiceClient,
             logging.info(f"Selected blob: {best_blob.name} with score {best_score:.2f}")
             blob_client = container_client.get_blob_client(best_blob.name)
             image_data = blob_client.download_blob().readall()
-            description = best_analysis.get('description', '') if best_analysis else ''
+            
+            # Use GPT-4 Vision to get detailed description of cat's activity and surroundings
+            # Fall back to Computer Vision's basic description if GPT-4 Vision fails
+            description = ""
+            if best_blob_url:
+                description = analyze_image_with_vision(text_client, text_model, best_blob_url)
+            
+            if not description:
+                # Fallback to Computer Vision's basic description
+                description = best_analysis.get('description', '') if best_analysis else ''
+                logging.info(f"Using Computer Vision description as fallback: {description}")
+            
             return (image_data, best_blob.name, description)
         else:
             logging.info(f"No photo met the minimum quality threshold ({MIN_ACCEPTABLE_SCORE})")
@@ -1114,6 +1194,8 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
         result = select_best_photo(
             blob_service_client, 
             cv_client,
+            text_client,
+            OPENAI_TEXT_MODEL,
             BLOB_CONTAINER_NAME,
             DAYS_TO_CHECK
         )
