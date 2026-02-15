@@ -18,7 +18,8 @@ The function runs daily at 10:00 AM UTC, ensuring Milo gets his daily spotlight!
 - **Smart Photo Selection**: Uses Azure Computer Vision to score photos based on quality, composition, and relevance
 - **AI-Powered Appearance Analysis**: Uses GPT-4 Vision to analyze actual Milo photos and extract detailed visual characteristics
 - **Mood-Based AI Generation**: When no suitable photos are found, DALL-E 3 generates images of Milo with random moods (happy, playful, sleepy, curious, gloomy, angry, regal, cozy) based on his actual appearance
-- **Context-Aware Caption Generation**: AI-generated witty captions that adapt to day of week, season, holidays, and photo content, reflecting Milo's grumpy personality
+- **Context-Aware Caption Generation**: AI-generated witty captions that adapt to day of week, real-time weather conditions, holidays, and photo content, reflecting Milo's grumpy personality
+- **Real-Time Weather Integration**: Fetches current weather from OpenWeatherMap API to create timely, relevant captions with actual conditions
 - **Automated Posting**: Seamless integration with Postly API for social media management
 - **Comprehensive Logging**: Detailed logging for monitoring and debugging
 - **Configurable**: Flexible settings for storage containers, scoring parameters, and scheduling
@@ -33,9 +34,10 @@ Before deploying this application, you'll need:
 4. **Azure OpenAI Service** - With two deployments:
    - **DALL-E 3** for AI image generation
    - **GPT-4 Vision** (gpt-4o or gpt-4-turbo-vision) for analyzing Milo's appearance
-5. **Postly Account** - [Sign up at Postly.ai](https://postly.ai/) and obtain API credentials
-6. **Azure Functions Core Tools** (for local development) - [Installation guide](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
-7. **Python 3.9-3.11** - Azure Functions currently supports Python 3.9, 3.10, and 3.11
+5. **OpenWeatherMap API Key (optional)** - [Sign up for free](https://openweathermap.org/api) for real-time weather data in captions
+6. **Postly Account** - [Sign up at Postly.ai](https://postly.ai/) and obtain API credentials
+7. **Azure Functions Core Tools** (for local development) - [Installation guide](https://learn.microsoft.com/azure/azure-functions/functions-run-local)
+8. **Python 3.9-3.11** - Azure Functions currently supports Python 3.9, 3.10, and 3.11
 
 ## Setup Instructions
 
@@ -182,6 +184,8 @@ The following environment variables must be set in Azure Function App Settings o
 - OPENAI_TEXT_MODEL
 - OPENAI_TEXT_API_KEY
 - OPENAI_TEXT_ENDPOINT
+- WEATHER_API_KEY (optional - from OpenWeatherMap for real-time weather in captions)
+- WEATHER_LOCATION (optional - defaults to "Pittsburgh,US")
 - POSTLY_API_KEY
 - POSTLY_WORKSPACE_ID
 - POSTLY_TARGET_PLATFORMS
@@ -398,17 +402,20 @@ If no suitable photo is found in blob storage:
 
 Captions are dynamically generated using AI to keep content fresh and engaging:
 
-1. **Context Collection**: Gathers current temporal context including:
-   - Day of week (Monday through Sunday)
-   - Season (winter, spring, summer, fall for Northern Hemisphere)
-   - Notable holidays (New Year's Day, Valentine's Day, St. Patrick's Day, April Fool's Day, Halloween, Thanksgiving, Christmas, New Year's Eve)
+1. **Context Collection**: Gathers current temporal and environmental context including:
+   - Day of week (Monday through Sunday) - included 40% of the time for variety
+   - Real-time weather conditions via OpenWeatherMap API - included 60% of the time when API key is configured
+     - Current temperature and weather description (e.g., "clear sky", "light rain")
+     - Location-specific data based on WEATHER_LOCATION setting
+   - Notable holidays (always included when applicable) - New Year's Day, Valentine's Day, St. Patrick's Day, April Fool's Day, Halloween, Thanksgiving, Christmas, New Year's Eve
 
 2. **Image Analysis**: Uses Computer Vision description of the selected photo (when available)
 
 3. **AI Caption Generation**: Uses Azure OpenAI GPT-4 to create:
    - Short, witty captions (max 15 words)
    - Grumpy but lovable personality matching Milo's character
-   - Context-aware references to day, season, or holidays
+   - Varied captions - context elements are probabilistically included to prevent repetitive patterns
+   - Real weather-aware references when available (e.g., "it's 45°F and rainy, perfect nap weather")
    - Fallback captions if API is unavailable
 
 4. **Caption Format**:
