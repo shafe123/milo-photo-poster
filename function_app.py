@@ -967,7 +967,8 @@ def post_to_postly(api_key: str, workspace_id: str,
                     "url": image_url,
                     "type": "image/jpeg"
                 }
-            ]
+            ],
+            "post_now": True
         }
         
         # Add target platforms if provided
