@@ -15,7 +15,7 @@
     "OPENAI_TEXT_ENDPOINT": "https://your-openai-text-resource.openai.azure.com/",
     "OPENAI_TEXT_MODEL": "gpt-4o",
     "WEATHER_API_KEY": "your-openweathermap-api-key-here",
-    "WEATHER_LOCATION": "Seattle,US",
+    "WEATHER_LOCATION": "Pittsburgh,US",
     "POSTLY_API_KEY": "your-postly-api-key-here",
     "POSTLY_WORKSPACE_ID": "your-postly-workspace-id-here",
     "POSTLY_TARGET_PLATFORMS": "account-id-1,account-id-2",

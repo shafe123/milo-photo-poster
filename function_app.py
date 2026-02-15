@@ -44,7 +44,7 @@ OPENAI_TEXT_ENDPOINT = os.environ.get("OPENAI_TEXT_ENDPOINT", None)
 
 # Weather API configuration (OpenWeatherMap)
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", None)
-WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "Seattle,US")  # Default to Seattle
+WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "Pittsburgh,US")  # Default to Pittsburgh, PA
 
 POSTLY_API_KEY = os.environ.get("POSTLY_API_KEY")
 POSTLY_WORKSPACE_ID = os.environ.get("POSTLY_WORKSPACE_ID")

@@ -185,7 +185,7 @@ The following environment variables must be set in Azure Function App Settings o
 - OPENAI_TEXT_API_KEY
 - OPENAI_TEXT_ENDPOINT
 - WEATHER_API_KEY (optional - from OpenWeatherMap for real-time weather in captions)
-- WEATHER_LOCATION (optional - defaults to "Seattle,US")
+- WEATHER_LOCATION (optional - defaults to "Pittsburgh,US")
 - POSTLY_API_KEY
 - POSTLY_WORKSPACE_ID
 - POSTLY_TARGET_PLATFORMS
