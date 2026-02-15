@@ -41,6 +41,11 @@ OPENAI_IMAGE_ENDPOINT = os.environ.get("OPENAI_IMAGE_ENDPOINT", None)
 OPENAI_TEXT_MODEL = os.environ.get("OPENAI_TEXT_MODEL", "gpt-4o")
 OPENAI_TEXT_API_KEY = os.environ.get("OPENAI_TEXT_API_KEY", None)
 OPENAI_TEXT_ENDPOINT = os.environ.get("OPENAI_TEXT_ENDPOINT", None)
+
+# Weather API configuration (OpenWeatherMap)
+WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", None)
+WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "Seattle,US")  # Default to Seattle
+
 POSTLY_API_KEY = os.environ.get("POSTLY_API_KEY")
 POSTLY_WORKSPACE_ID = os.environ.get("POSTLY_WORKSPACE_ID")
 POSTLY_TARGET_PLATFORMS = os.environ.get("POSTLY_TARGET_PLATFORMS", "all")  # Comma-separated account IDs
@@ -747,9 +752,48 @@ def generate_ai_image(client: AzureOpenAI, image_model: str,
         return None
 
 
+def get_current_weather() -> Optional[Dict[str, Any]]:
+    """
+    Fetch current weather conditions from OpenWeatherMap API.
+    
+    Returns:
+        Dictionary with weather information or None if fetch fails
+    """
+    if not WEATHER_API_KEY:
+        logging.info("Weather API key not configured, skipping weather fetch")
+        return None
+    
+    try:
+        url = "http://api.openweathermap.org/data/2.5/weather"
+        params = {
+            "q": WEATHER_LOCATION,
+            "appid": WEATHER_API_KEY,
+            "units": "imperial"  # Fahrenheit
+        }
+        
+        response = requests.get(url, params=params, timeout=5)
+        response.raise_for_status()
+        data = response.json()
+        
+        # Extract relevant weather info
+        weather_info = {
+            "description": data["weather"][0]["description"],  # e.g., "clear sky", "light rain"
+            "temperature": round(data["main"]["temp"]),  # Fahrenheit
+            "feels_like": round(data["main"]["feels_like"]),
+            "location": data["name"]
+        }
+        
+        logging.info(f"Weather fetched: {weather_info['description']}, {weather_info['temperature']}°F in {weather_info['location']}")
+        return weather_info
+        
+    except Exception as e:
+        logging.warning(f"Failed to fetch weather data: {str(e)}")
+        return None
+
+
 def get_current_context() -> Dict[str, Any]:
     """
-    Get current temporal context including day of week, season, and notable dates.
+    Get current temporal context including day of week, season, weather, and notable dates.
     
     Returns:
         Dictionary containing contextual information
@@ -769,6 +813,9 @@ def get_current_context() -> Dict[str, Any]:
         season = "summer"
     else:
         season = "fall"
+    
+    # Get current weather
+    weather = get_current_weather()
     
     # Check for notable holidays/dates
     holidays = []
@@ -821,6 +868,7 @@ def get_current_context() -> Dict[str, Any]:
         "day_of_week": day_name,
         "season": season,
         "holidays": holidays,
+        "weather": weather,
         "date": now.strftime("%B %d, %Y")
     }
 
@@ -842,30 +890,47 @@ def generate_witty_caption(openai_client: AzureOpenAI,
         A witty caption string
     """
     try:
-        # Build context string
-        context_parts = [f"It's {context['day_of_week']}"]
-        context_parts.append(f"in {context['season']}")
+        # Build context string with variance to add variety to captions
+        context_parts = []
         
+        # 40% chance to include day of week
+        if random.random() < 0.4:
+            context_parts.append(f"It's {context['day_of_week']}")
+        
+        # Include actual weather data when available (60% of the time)
+        if context.get('weather') and random.random() < 0.6:
+            weather = context['weather']
+            weather_desc = weather['description']
+            temp = weather['temperature']
+            context_parts.append(f"weather is {weather_desc}, {temp}°F")
+        
+        # Always include holidays when present (they're special and worth mentioning)
         if context['holidays']:
-            context_parts.append(f"and it's {', '.join(context['holidays'])}")
+            context_parts.append(f"it's {', '.join(context['holidays'])}")
         
-        context_str = ", ".join(context_parts) + "."
+        # Build context string only if we have context to include
+        context_str = ", ".join(context_parts) + "." if context_parts else ""
         
         # Build prompt
-        prompt = f"""You are a witty social media caption writer for Milo, a grumpy but lovable cat with a sassy personality.
-
-Context: {context_str}
-
-{"Image description: " + image_description if image_description else ""}
+        prompt_parts = ["You are a witty social media caption writer for Milo, a grumpy but lovable cat with a sassy personality."]
+        
+        if context_str:
+            prompt_parts.append(f"\nContext: {context_str}")
+        
+        if image_description:
+            prompt_parts.append(f"\nImage description: {image_description}")
+        
+        prompt_parts.append("""
 
 Generate a SHORT, witty, and engaging caption (maximum 15 words) that:
 - Reflects Milo's grumpy yet endearing personality
-- Occasionally references the day/season/holiday, but not every time
 - Is funny and relatable to cat lovers
 - Avoids hashtags (they'll be added separately)
 - Uses a conversational tone that cats might use if they could talk
 
-Return ONLY the caption text, nothing else."""
+Return ONLY the caption text, nothing else.""")
+        
+        prompt = "".join(prompt_parts)
 
         logging.info(f"Generating witty caption with context: {context_str}")
         
