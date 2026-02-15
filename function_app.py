@@ -331,10 +331,10 @@ def analyze_image_with_vision(text_client: AzureOpenAI, text_model: str, image_u
         
         if description:
             logging.info(f"GPT-4 Vision description: {description}")
-            return description
         else:
             logging.warning("GPT-4 Vision returned empty description")
-            return ""
+        
+        return description
             
     except Exception as e:
         logging.warning(f"Error analyzing image with GPT-4 Vision: {str(e)}")
@@ -572,11 +572,11 @@ def select_best_photo(blob_service_client: BlobServiceClient,
             # Use GPT-4 Vision to get detailed description of cat's activity and surroundings
             # Fall back to Computer Vision's basic description if GPT-4 Vision fails
             description = ""
-            if best_blob_url:
+            if best_blob_url:  # Should always be set when best_blob is set
                 description = analyze_image_with_vision(text_client, text_model, best_blob_url)
             
+            # Use Computer Vision description as fallback if GPT-4 Vision returned empty or failed
             if not description:
-                # Fallback to Computer Vision's basic description
                 description = best_analysis.get('description', '') if best_analysis else ''
                 logging.info(f"Using Computer Vision description as fallback: {description}")
             
