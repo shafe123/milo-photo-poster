@@ -1,9 +1,11 @@
 import sys
 import os
 import json
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 from openai import AzureOpenAI
 from function_app import generate_witty_caption, get_current_context
+
 
 # Load environment variables from local.settings.json
 def load_local_settings(path="local.settings.json"):
@@ -12,6 +14,7 @@ def load_local_settings(path="local.settings.json"):
     values = settings.get("Values", {})
     for k, v in values.items():
         os.environ[k] = v
+
 
 load_local_settings()
 
@@ -22,9 +25,7 @@ TEXT_MODEL = os.environ.get("OPENAI_TEXT_MODEL", "gpt-4o")
 
 # Initialize AzureOpenAI client for text
 text_client = AzureOpenAI(
-    api_key=TEXT_API_KEY,
-    api_version="2024-02-01",
-    azure_endpoint=TEXT_ENDPOINT
+    api_key=TEXT_API_KEY, api_version="2024-02-01", azure_endpoint=TEXT_ENDPOINT
 )
 
 # Get context for caption
@@ -38,7 +39,7 @@ caption = generate_witty_caption(
     text_client,
     text_model=TEXT_MODEL,
     context=context,
-    image_description=image_description
+    image_description=image_description,
 )
 
 print("Generated Caption:", caption)

@@ -12,7 +12,13 @@ from typing import Optional, Dict, Any, List, Tuple
 import calendar
 
 import azure.functions as func
-from azure.storage.blob import BlobServiceClient, BlobProperties, generate_blob_sas, BlobSasPermissions, ContentSettings
+from azure.storage.blob import (
+    BlobServiceClient,
+    BlobProperties,
+    generate_blob_sas,
+    BlobSasPermissions,
+    ContentSettings,
+)
 from azure.cognitiveservices.vision.computervision import ComputerVisionClient
 from azure.cognitiveservices.vision.computervision.models import VisualFeatureTypes
 from msrest.authentication import CognitiveServicesCredentials
@@ -23,9 +29,11 @@ from PIL import Image
 app = func.FunctionApp()
 
 # Configure logging - quiet Azure SDK verbose logging
-logging.getLogger('azure').setLevel(logging.WARNING)
-logging.getLogger('azure.core.pipeline.policies.http_logging_policy').setLevel(logging.WARNING)
-logging.getLogger('azure.storage.blob').setLevel(logging.WARNING)
+logging.getLogger("azure").setLevel(logging.WARNING)
+logging.getLogger("azure.core.pipeline.policies.http_logging_policy").setLevel(
+    logging.WARNING
+)
+logging.getLogger("azure.storage.blob").setLevel(logging.WARNING)
 
 # Configuration
 AZURE_STORAGE_CONNECTION_STRING = os.environ.get("AZURE_STORAGE_CONNECTION_STRING")
@@ -42,58 +50,89 @@ OPENAI_TEXT_MODEL = os.environ.get("OPENAI_TEXT_MODEL", "gpt-4o")
 OPENAI_TEXT_API_KEY = os.environ.get("OPENAI_TEXT_API_KEY", None)
 OPENAI_TEXT_ENDPOINT = os.environ.get("OPENAI_TEXT_ENDPOINT", None)
 
-# Weather API configuration (OpenWeatherMap)
+# Weather API configuration (OpenWeatherMap One Call API 3.0)
 WEATHER_API_KEY = os.environ.get("WEATHER_API_KEY", None)
-WEATHER_LOCATION = os.environ.get("WEATHER_LOCATION", "Pittsburgh,US")  # Default to Pittsburgh, PA
+WEATHER_LAT = os.environ.get(
+    "WEATHER_LAT", "40.4406"
+)  # Default to Pittsburgh, PA latitude
+WEATHER_LON = os.environ.get(
+    "WEATHER_LON", "-79.9959"
+)  # Default to Pittsburgh, PA longitude
 
 POSTLY_API_KEY = os.environ.get("POSTLY_API_KEY")
 POSTLY_WORKSPACE_ID = os.environ.get("POSTLY_WORKSPACE_ID")
-POSTLY_TARGET_PLATFORMS = os.environ.get("POSTLY_TARGET_PLATFORMS", "all")  # Comma-separated account IDs
-POSTLY_BLUESKY_ACCOUNT_ID = os.environ.get("POSTLY_BLUESKY_ACCOUNT_ID", None)  # Bluesky account ID (set to actual account ID from Postly)
-POSTLY_INSTAGRAM_ACCOUNT_ID = os.environ.get("POSTLY_INSTAGRAM_ACCOUNT_ID", None)  # Instagram account ID (set to actual account ID from Postly)
+POSTLY_TARGET_PLATFORMS = os.environ.get(
+    "POSTLY_TARGET_PLATFORMS", "all"
+)  # Comma-separated account IDs
+POSTLY_BLUESKY_ACCOUNT_ID = os.environ.get(
+    "POSTLY_BLUESKY_ACCOUNT_ID", None
+)  # Bluesky account ID (set to actual account ID from Postly)
+POSTLY_INSTAGRAM_ACCOUNT_ID = os.environ.get(
+    "POSTLY_INSTAGRAM_ACCOUNT_ID", None
+)  # Instagram account ID (set to actual account ID from Postly)
 DAYS_TO_CHECK = int(os.environ.get("DAYS_TO_CHECK", "7"))
-MAX_PHOTOS_TO_ANALYZE = int(os.environ.get("MAX_PHOTOS_TO_ANALYZE", "10"))  # Limit to avoid rate limits
-POSTED_HISTORY_DAYS = int(os.environ.get("POSTED_HISTORY_DAYS", "30"))  # Days to remember posted photos
+MAX_PHOTOS_TO_ANALYZE = int(
+    os.environ.get("MAX_PHOTOS_TO_ANALYZE", "10")
+)  # Limit to avoid rate limits
+POSTED_HISTORY_DAYS = int(
+    os.environ.get("POSTED_HISTORY_DAYS", "30")
+)  # Days to remember posted photos
 
 # Custom Vision configuration for Milo detection
-CUSTOM_VISION_PREDICTION_ENDPOINT = os.environ.get("CUSTOM_VISION_PREDICTION_ENDPOINT")  # e.g., https://xxxxx.cognitiveservices.azure.com/
+CUSTOM_VISION_PREDICTION_ENDPOINT = os.environ.get(
+    "CUSTOM_VISION_PREDICTION_ENDPOINT"
+)  # e.g., https://xxxxx.cognitiveservices.azure.com/
 CUSTOM_VISION_PREDICTION_KEY = os.environ.get("CUSTOM_VISION_PREDICTION_KEY")
 CUSTOM_VISION_PROJECT_ID = os.environ.get("CUSTOM_VISION_PROJECT_ID")
-CUSTOM_VISION_ITERATION_NAME = os.environ.get("CUSTOM_VISION_ITERATION_NAME", "Iteration1")
-MILO_CONFIDENCE_THRESHOLD = float(os.environ.get("MILO_CONFIDENCE_THRESHOLD", "0.7"))  # Minimum confidence to consider Milo present
-REQUIRE_MILO_IN_PHOTO = os.environ.get("REQUIRE_MILO_IN_PHOTO", "true").lower() == "true"  # Filter out photos without Milo
+CUSTOM_VISION_ITERATION_NAME = os.environ.get(
+    "CUSTOM_VISION_ITERATION_NAME", "Iteration1"
+)
+MILO_CONFIDENCE_THRESHOLD = float(
+    os.environ.get("MILO_CONFIDENCE_THRESHOLD", "0.7")
+)  # Minimum confidence to consider Milo present
+REQUIRE_MILO_IN_PHOTO = (
+    os.environ.get("REQUIRE_MILO_IN_PHOTO", "true").lower() == "true"
+)  # Filter out photos without Milo
 
 # Constants
-SUPPORTED_IMAGE_EXTENSIONS = ('.jpg', '.jpeg', '.png', '.gif', '.bmp')
+SUPPORTED_IMAGE_EXTENSIONS = (".jpg", ".jpeg", ".png", ".gif", ".bmp")
 MIN_ACCEPTABLE_SCORE = 30  # Minimum photo appeal score to accept (0-100 scale)
 POSTED_METADATA_KEY = "posted_date"  # Metadata key for tracking when a photo was posted
 MILO_DETECTED_KEY = "milo_detected"  # Metadata key for caching Milo detection result
-MILO_CONFIDENCE_KEY = "milo_confidence"  # Metadata key for storing Milo detection confidence
-MILO_ITERATION_KEY = "milo_iteration"  # Metadata key for tracking which Custom Vision iteration was used
-MAX_IMAGE_SIZE_BYTES = int(1024 * 1024 * 0.90)  # ~900 KB - Safe size for all platforms, with buffer space
+MILO_CONFIDENCE_KEY = (
+    "milo_confidence"  # Metadata key for storing Milo detection confidence
+)
+MILO_ITERATION_KEY = (
+    "milo_iteration"  # Metadata key for tracking which Custom Vision iteration was used
+)
+MAX_IMAGE_SIZE_BYTES = int(
+    1024 * 1024 * 0.90
+)  # ~900 KB - Safe size for all platforms, with buffer space
 MAX_IMAGE_DIMENSION = 4096  # Maximum dimension to downsize images to
 
 # Caption generation constants
 CAPTION_PREFIX = "Daily Milo! 😾"  # Grumpy cat emoji to match Milo's personality
 CAPTION_HASHTAGS = "#Milo #Cats #GrumpyCat"
 CAPTION_MAX_TOKENS = 100  # Maximum tokens for GPT caption generation, current model does not support max tokens
-CAPTION_TEMPERATURE = 1.0  # Temperature for caption creativity (0.0-1.0), current model only supports 1.0
+CAPTION_TEMPERATURE = (
+    1.0  # Temperature for caption creativity (0.0-1.0), current model only supports 1.0
+)
 
 
 def get_recent_blobs(container_client, days: int) -> List[BlobProperties]:
     """
     Get all blobs modified in the last N days from the container.
-    
+
     Args:
         container_client: Azure Blob Container client
         days: Number of days to look back
-        
+
     Returns:
         List of blob properties for recent blobs
     """
     cutoff_date = datetime.utcnow() - timedelta(days=days)
     recent_blobs = []
-    
+
     try:
         for blob in container_client.list_blobs():
             if blob.last_modified.replace(tzinfo=None) >= cutoff_date:
@@ -103,7 +142,7 @@ def get_recent_blobs(container_client, days: int) -> List[BlobProperties]:
     except Exception as e:
         logging.error(f"Error listing blobs: {str(e)}")
         raise
-    
+
     logging.info(f"Found {len(recent_blobs)} recent image(s) in blob storage")
     return recent_blobs
 
@@ -111,29 +150,29 @@ def get_recent_blobs(container_client, days: int) -> List[BlobProperties]:
 def is_blob_posted(blob_client, history_days: int) -> bool:
     """
     Check if a blob has been posted recently.
-    
+
     Args:
         blob_client: Azure Blob client for the specific blob
         history_days: Number of days to consider a photo as "recently posted"
-        
+
     Returns:
         True if blob was posted within history_days, False otherwise
     """
     try:
         properties = blob_client.get_blob_properties()
         metadata = properties.metadata
-        
+
         if POSTED_METADATA_KEY not in metadata:
             return False
-        
+
         posted_date_str = metadata[POSTED_METADATA_KEY]
         # Parse the ISO format date and ensure it's timezone-naive for comparison
         posted_date = datetime.fromisoformat(posted_date_str)
         if posted_date.tzinfo is not None:
             posted_date = posted_date.replace(tzinfo=None)
-        
+
         cutoff_date = datetime.utcnow() - timedelta(days=history_days)
-        
+
         return posted_date >= cutoff_date
     except Exception as e:
         logging.warning(f"Error checking posted status: {str(e)}")
@@ -144,7 +183,7 @@ def is_blob_posted(blob_client, history_days: int) -> bool:
 def mark_blob_as_posted(blob_client) -> None:
     """
     Mark a blob as posted by setting metadata with the current timestamp.
-    
+
     Args:
         blob_client: Azure Blob client for the specific blob
     """
@@ -152,24 +191,27 @@ def mark_blob_as_posted(blob_client) -> None:
         properties = blob_client.get_blob_properties()
         metadata = properties.metadata or {}
         metadata[POSTED_METADATA_KEY] = datetime.utcnow().isoformat()
-        
+
         blob_client.set_blob_metadata(metadata)
         logging.info(f"Marked blob as posted: {blob_client.blob_name}")
     except Exception as e:
         logging.error(f"Error marking blob as posted: {str(e)}")
 
 
-def downsize_image_if_needed(blob_client, max_size_bytes: int = MAX_IMAGE_SIZE_BYTES, 
-                              max_dimension: int = MAX_IMAGE_DIMENSION) -> bool:
+def downsize_image_if_needed(
+    blob_client,
+    max_size_bytes: int = MAX_IMAGE_SIZE_BYTES,
+    max_dimension: int = MAX_IMAGE_DIMENSION,
+) -> bool:
     """
     Check if an image is too large and downsize it if needed.
     Overwrites the original blob with the downsized version.
-    
+
     Args:
         blob_client: Azure Blob Storage client for the image
         max_size_bytes: Maximum allowed file size in bytes
         max_dimension: Maximum width or height to resize to
-        
+
     Returns:
         True if image was downsized, False otherwise
     """
@@ -177,17 +219,19 @@ def downsize_image_if_needed(blob_client, max_size_bytes: int = MAX_IMAGE_SIZE_B
         # Get blob properties to check size
         properties = blob_client.get_blob_properties()
         current_size = properties.size
-        
+
         # If image is under the limit, no need to downsize
         if current_size <= max_size_bytes:
             return False
-            
-        logging.info(f"Image {blob_client.blob_name} is {current_size / 1024 / 1024:.2f} MB, downsizing...")
-        
+
+        logging.info(
+            f"Image {blob_client.blob_name} is {current_size / 1024 / 1024:.2f} MB, downsizing..."
+        )
+
         # Download the image
         image_data = blob_client.download_blob().readall()
         image = Image.open(io.BytesIO(image_data))
-        
+
         # Calculate new dimensions while maintaining aspect ratio
         width, height = image.size
         if width > max_dimension or height > max_dimension:
@@ -195,57 +239,69 @@ def downsize_image_if_needed(blob_client, max_size_bytes: int = MAX_IMAGE_SIZE_B
             scale = min(max_dimension / width, max_dimension / height)
             new_width = int(width * scale)
             new_height = int(height * scale)
-            
+
             # Resize image using high-quality Lanczos filter
             image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
             logging.info(f"Resized from {width}x{height} to {new_width}x{new_height}")
-        
+
         # Save to bytes buffer with progressive quality reduction until under size limit
         quality = 85  # Start with high quality
         while quality > 20:  # Don't go below quality 20
             output = io.BytesIO()
-            
+
             # Save as JPEG (most efficient compression)
-            if image.mode in ('RGBA', 'LA', 'P'):
+            if image.mode in ("RGBA", "LA", "P"):
                 # Convert images with transparency to RGB
-                rgb_image = Image.new('RGB', image.size, (255, 255, 255))
-                if image.mode == 'P':
-                    image = image.convert('RGBA')
-                rgb_image.paste(image, mask=image.split()[-1] if image.mode in ('RGBA', 'LA') else None)
+                rgb_image = Image.new("RGB", image.size, (255, 255, 255))
+                if image.mode == "P":
+                    image = image.convert("RGBA")
+                rgb_image.paste(
+                    image,
+                    mask=image.split()[-1] if image.mode in ("RGBA", "LA") else None,
+                )
                 image = rgb_image
-            
-            image.save(output, format='JPEG', quality=quality, optimize=True)
+
+            image.save(output, format="JPEG", quality=quality, optimize=True)
             output_size = output.tell()
-            
+
             if output_size <= max_size_bytes:
                 # Size is acceptable, upload the downsized image
                 output.seek(0)
-                blob_client.upload_blob(output, overwrite=True, content_settings=ContentSettings(content_type='image/jpeg'))
-                logging.info(f"Downsized image from {current_size / 1024 / 1024:.2f} MB to {output_size / 1024 / 1024:.2f} MB (quality={quality})")
+                blob_client.upload_blob(
+                    output,
+                    overwrite=True,
+                    content_settings=ContentSettings(content_type="image/jpeg"),
+                )
+                logging.info(
+                    f"Downsized image from {current_size / 1024 / 1024:.2f} MB to {output_size / 1024 / 1024:.2f} MB (quality={quality})"
+                )
                 return True
-            
+
             # Reduce quality for next iteration
             quality -= 5
-        
+
         # If we get here, even at lowest quality the image is too large
         # This shouldn't happen in practice with reasonable max_dimension
-        logging.warning(f"Could not downsize {blob_client.blob_name} to under {max_size_bytes} bytes")
+        logging.warning(
+            f"Could not downsize {blob_client.blob_name} to under {max_size_bytes} bytes"
+        )
         return False
-        
+
     except Exception as e:
         logging.error(f"Error downsizing image {blob_client.blob_name}: {str(e)}")
         return False
 
 
-
-def analyze_image_quality(cv_client: ComputerVisionClient, image_url: str) -> Dict[str, Any]:
+def analyze_image_quality(
+    cv_client: ComputerVisionClient, image_url: str
+) -> Dict[str, Any]:
     """
     Analyze image using Azure Computer Vision API.
-    
+
     Args:
         cv_client: Computer Vision client
         image_url: URL of the image to analyze
-        
+
     Returns:
         Dictionary containing analysis results
     """
@@ -255,44 +311,52 @@ def analyze_image_quality(cv_client: ComputerVisionClient, image_url: str) -> Di
             VisualFeatureTypes.tags,
             VisualFeatureTypes.adult,
             VisualFeatureTypes.color,
-            VisualFeatureTypes.image_type
+            VisualFeatureTypes.image_type,
         ]
-        
+
         analysis = cv_client.analyze_image(image_url, visual_features=features)
-        
+
         return {
-            'description': analysis.description.captions[0].text if analysis.description.captions else '',
-            'confidence': analysis.description.captions[0].confidence if analysis.description.captions else 0,
-            'tags': [(tag.name, tag.confidence) for tag in analysis.tags],
-            'is_adult_content': analysis.adult.is_adult_content,
-            'is_racy_content': analysis.adult.is_racy_content,
-            'adult_score': analysis.adult.adult_score,
-            'racy_score': analysis.adult.racy_score,
-            'dominant_colors': analysis.color.dominant_colors,
-            'is_bw': analysis.color.is_bw_img,
-            'is_clip_art': analysis.image_type.clip_art_type,
-            'is_line_drawing': analysis.image_type.line_drawing_type
+            "description": analysis.description.captions[0].text
+            if analysis.description.captions
+            else "",
+            "confidence": analysis.description.captions[0].confidence
+            if analysis.description.captions
+            else 0,
+            "tags": [(tag.name, tag.confidence) for tag in analysis.tags],
+            "is_adult_content": analysis.adult.is_adult_content,
+            "is_racy_content": analysis.adult.is_racy_content,
+            "adult_score": analysis.adult.adult_score,
+            "racy_score": analysis.adult.racy_score,
+            "dominant_colors": analysis.color.dominant_colors,
+            "is_bw": analysis.color.is_bw_img,
+            "is_clip_art": analysis.image_type.clip_art_type,
+            "is_line_drawing": analysis.image_type.line_drawing_type,
         }
     except Exception as e:
         logging.error(f"Error analyzing image: {str(e)}")
         raise
 
 
-def analyze_image_with_vision(text_client: AzureOpenAI, text_model: str, image_url: str) -> str:
+def analyze_image_with_vision(
+    text_client: AzureOpenAI, text_model: str, image_url: str
+) -> str:
     """
     Analyze image using GPT-4 Vision to get detailed description of cat's activity and surroundings.
-    
+
     Args:
         text_client: Azure OpenAI client with vision capabilities
         text_model: Name of the GPT-4 Vision model
         image_url: URL of the image to analyze
-        
+
     Returns:
         Detailed description of what the cat is doing and the surroundings
     """
     try:
-        logging.info(f"Analyzing image with GPT-4 Vision for detailed activity description")
-        
+        logging.info(
+            "Analyzing image with GPT-4 Vision for detailed activity description"
+        )
+
         content: list[dict[str, object]] = [
             {
                 "type": "text",
@@ -304,38 +368,36 @@ def analyze_image_with_vision(text_client: AzureOpenAI, text_model: str, image_u
                     "- Key details about the surroundings or environment\n"
                     "- Any interesting context that would help create an engaging social media caption\n\n"
                     "Be descriptive but concise (1-2 sentences). Focus on observable actions and details."
-                )
+                ),
             },
-            {
-                "type": "image_url",
-                "image_url": {"url": image_url}
-            }
+            {"type": "image_url", "image_url": {"url": image_url}},
         ]
-        
+
         response = text_client.chat.completions.create(
             model=text_model,
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert at analyzing cat photos and describing their activities and surroundings in an engaging way."
+                    "content": "You are an expert at analyzing cat photos and describing their activities and surroundings in an engaging way.",
                 },
-                {
-                    "role": "user",
-                    "content": content
-                } # type: ignore
+                {"role": "user", "content": content},  # type: ignore
             ],
-            max_tokens=200
+            max_tokens=200,
         )
-        
-        description = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
-        
+
+        description = (
+            response.choices[0].message.content.strip()
+            if response.choices[0].message.content
+            else ""
+        )
+
         if description:
             logging.info(f"GPT-4 Vision description: {description}")
         else:
             logging.warning("GPT-4 Vision returned empty description")
-        
+
         return description
-            
+
     except Exception as e:
         logging.warning(f"Error analyzing image with GPT-4 Vision: {str(e)}")
         return ""
@@ -344,38 +406,38 @@ def analyze_image_with_vision(text_client: AzureOpenAI, text_model: str, image_u
 def calculate_appeal_score(analysis: Dict[str, Any]) -> float:
     """
     Calculate an appeal score for the image based on analysis results.
-    
+
     Args:
         analysis: Analysis results from Computer Vision API
-        
+
     Returns:
         Appeal score (0-100)
     """
     score = 0.0
-    
+
     # Base score from description confidence
-    score += analysis['confidence'] * 30
-    
+    score += analysis["confidence"] * 30
+
     # Bonus for cat-related tags
-    cat_tags = ['cat', 'kitten', 'feline', 'pet', 'animal', 'mammal']
-    for tag_name, tag_confidence in analysis['tags']:
+    cat_tags = ["cat", "kitten", "feline", "pet", "animal", "mammal"]
+    for tag_name, tag_confidence in analysis["tags"]:
         if any(cat_word in tag_name.lower() for cat_word in cat_tags):
             score += tag_confidence * 20
-    
+
     # Penalty for adult/racy content
-    if analysis['is_adult_content'] or analysis['is_racy_content']:
+    if analysis["is_adult_content"] or analysis["is_racy_content"]:
         score -= 50
-    
+
     # Penalty for clip art or line drawings (we want real photos)
-    if analysis['is_clip_art'] > 2:  # Scale is 0-3
+    if analysis["is_clip_art"] > 2:  # Scale is 0-3
         score -= 20
-    if analysis['is_line_drawing'] > 0:  # Scale is 0-1
+    if analysis["is_line_drawing"] > 0:  # Scale is 0-1
         score -= 15
-    
+
     # Bonus for color images
-    if not analysis['is_bw']:
+    if not analysis["is_bw"]:
         score += 10
-    
+
     # Ensure score is between 0 and 100
     return max(0, min(100, score))
 
@@ -384,11 +446,11 @@ def check_milo_in_photo(blob_client, image_url: str) -> Tuple[bool, float]:
     """
     Check if Milo is present in a photo using Azure Custom Vision.
     Uses cached metadata if available to avoid repeated API calls.
-    
+
     Args:
         blob_client: Azure Blob client for the specific blob
         image_url: URL of the image to analyze
-        
+
     Returns:
         Tuple of (is_milo_present: bool, confidence: float)
     """
@@ -396,57 +458,71 @@ def check_milo_in_photo(blob_client, image_url: str) -> Tuple[bool, float]:
     try:
         properties = blob_client.get_blob_properties()
         metadata = properties.metadata
-        
+
         if MILO_DETECTED_KEY in metadata:
             cached_iteration = metadata.get(MILO_ITERATION_KEY, "")
-            
+
             # Only use cache if it's from the same iteration
             if cached_iteration == CUSTOM_VISION_ITERATION_NAME:
                 cached_result = metadata[MILO_DETECTED_KEY].lower() == "true"
                 cached_confidence = float(metadata.get(MILO_CONFIDENCE_KEY, "0"))
-                logging.info(f"Using cached Milo detection for {blob_client.blob_name}: {cached_result} (confidence: {cached_confidence:.2f}, iteration: {cached_iteration})")
+                logging.info(
+                    f"Using cached Milo detection for {blob_client.blob_name}: {cached_result} (confidence: {cached_confidence:.2f}, iteration: {cached_iteration})"
+                )
                 return cached_result, cached_confidence
             else:
-                logging.info(f"Cached result for {blob_client.blob_name} is from iteration '{cached_iteration}', current is '{CUSTOM_VISION_ITERATION_NAME}' - re-analyzing")
+                logging.info(
+                    f"Cached result for {blob_client.blob_name} is from iteration '{cached_iteration}', current is '{CUSTOM_VISION_ITERATION_NAME}' - re-analyzing"
+                )
     except Exception as e:
         logging.warning(f"Error reading cached Milo detection: {str(e)}")
-    
+
     # No cached result, call Custom Vision API
-    if not all([CUSTOM_VISION_PREDICTION_ENDPOINT, CUSTOM_VISION_PREDICTION_KEY, CUSTOM_VISION_PROJECT_ID]):
+    if not all(
+        [
+            CUSTOM_VISION_PREDICTION_ENDPOINT,
+            CUSTOM_VISION_PREDICTION_KEY,
+            CUSTOM_VISION_PROJECT_ID,
+        ]
+    ):
         logging.warning("Custom Vision not configured, assuming Milo is present")
         return True, 1.0
-    
+
     try:
         # Call Custom Vision Prediction API
         # Strip trailing slash from endpoint to avoid double slashes in URL
-        endpoint = CUSTOM_VISION_PREDICTION_ENDPOINT.rstrip('/')
+        endpoint = CUSTOM_VISION_PREDICTION_ENDPOINT.rstrip("/")
         prediction_url = f"{endpoint}/customvision/v3.0/Prediction/{CUSTOM_VISION_PROJECT_ID}/classify/iterations/{CUSTOM_VISION_ITERATION_NAME}/url"
-        
+
         headers = {
             "Prediction-Key": CUSTOM_VISION_PREDICTION_KEY,
-            "Content-Type": "application/json"
+            "Content-Type": "application/json",
         }
-        
+
         body = {"Url": image_url}
-        
+
         logging.info(f"Calling Custom Vision to detect Milo in {blob_client.blob_name}")
-        response = requests.post(prediction_url, headers=headers, json=body)
+        response = requests.post(prediction_url, headers=headers, json=body, timeout=10)
         response.raise_for_status()
-        
+
         predictions = response.json().get("predictions", [])
-        
+
         # Look for tags where Milo is present: "milo" or "both"
         # Ignore "emilio" (Emilio only) and "neither" (no cats)
         milo_confidence = 0.0
         for prediction in predictions:
             tag_name = prediction.get("tagName", "").lower()
             if tag_name in ["milo", "both"]:
-                milo_confidence = max(milo_confidence, prediction.get("probability", 0.0))
-        
+                milo_confidence = max(
+                    milo_confidence, prediction.get("probability", 0.0)
+                )
+
         is_milo_present = milo_confidence >= MILO_CONFIDENCE_THRESHOLD
-        
-        logging.info(f"Custom Vision result for {blob_client.blob_name}: Milo confidence={milo_confidence:.2f}, present={is_milo_present}")
-        
+
+        logging.info(
+            f"Custom Vision result for {blob_client.blob_name}: Milo confidence={milo_confidence:.2f}, present={is_milo_present}"
+        )
+
         # Cache the result in blob metadata
         try:
             properties = blob_client.get_blob_properties()
@@ -455,27 +531,31 @@ def check_milo_in_photo(blob_client, image_url: str) -> Tuple[bool, float]:
             metadata[MILO_CONFIDENCE_KEY] = f"{milo_confidence:.4f}"
             metadata[MILO_ITERATION_KEY] = CUSTOM_VISION_ITERATION_NAME
             blob_client.set_blob_metadata(metadata)
-            logging.info(f"Cached Milo detection result in metadata for {blob_client.blob_name} (iteration: {CUSTOM_VISION_ITERATION_NAME})")
+            logging.info(
+                f"Cached Milo detection result in metadata for {blob_client.blob_name} (iteration: {CUSTOM_VISION_ITERATION_NAME})"
+            )
         except Exception as e:
             logging.warning(f"Error caching Milo detection result: {str(e)}")
-        
+
         return is_milo_present, milo_confidence
-        
+
     except Exception as e:
         logging.error(f"Error detecting Milo with Custom Vision: {str(e)}")
         # On error, assume Milo is present to avoid filtering out photos unnecessarily
         return True, 1.0
 
 
-def select_best_photo(blob_service_client: BlobServiceClient, 
-                     cv_client: ComputerVisionClient,
-                     text_client: AzureOpenAI,
-                     text_model: str,
-                     container_name: str,
-                     days: int) -> Optional[Tuple[bytes, str, str]]:
+def select_best_photo(
+    blob_service_client: BlobServiceClient,
+    cv_client: ComputerVisionClient,
+    text_client: AzureOpenAI,
+    text_model: str,
+    container_name: str,
+    days: int,
+) -> Optional[Tuple[bytes, str, str]]:
     """
     Select the best photo from blob storage based on appeal score.
-    
+
     Args:
         blob_service_client: Azure Blob Storage client
         cv_client: Computer Vision client
@@ -483,50 +563,54 @@ def select_best_photo(blob_service_client: BlobServiceClient,
         text_model: Name of the GPT-4 Vision model
         container_name: Name of the blob container
         days: Number of days to look back
-        
+
     Returns:
         Tuple of (image_bytes, blob_name, description) or None if no suitable photo found
     """
     try:
         container_client = blob_service_client.get_container_client(container_name)
         recent_blobs = get_recent_blobs(container_client, days)
-        
+
         if not recent_blobs:
             logging.info("No recent photos found in blob storage")
             return None
-        
+
         # Filter out recently posted photos to avoid duplicates
         unposted_blobs = []
         for blob in recent_blobs:
             blob_client = container_client.get_blob_client(blob.name)
             if not is_blob_posted(blob_client, POSTED_HISTORY_DAYS):
                 unposted_blobs.append(blob)
-        
-        logging.info(f"Found {len(unposted_blobs)} unposted photos out of {len(recent_blobs)} recent photos")
-        
+
+        logging.info(
+            f"Found {len(unposted_blobs)} unposted photos out of {len(recent_blobs)} recent photos"
+        )
+
         if not unposted_blobs:
             logging.info("All recent photos have already been posted")
             return None
-        
+
         # Randomly sample photos to analyze (to avoid rate limits)
         blobs_to_analyze = unposted_blobs
         if len(unposted_blobs) > MAX_PHOTOS_TO_ANALYZE:
             blobs_to_analyze = random.sample(unposted_blobs, MAX_PHOTOS_TO_ANALYZE)
-            logging.info(f"Randomly selected {MAX_PHOTOS_TO_ANALYZE} photos from {len(unposted_blobs)} available photos")
-        
+            logging.info(
+                f"Randomly selected {MAX_PHOTOS_TO_ANALYZE} photos from {len(unposted_blobs)} available photos"
+            )
+
         best_blob = None
         best_score = -1
         best_analysis = None
         best_blob_url = None  # Store the URL for the best blob
-        
+
         for blob in blobs_to_analyze:
             try:
                 # Get blob client and generate SAS URL for Computer Vision API access
                 blob_client = container_client.get_blob_client(blob.name)
-                
+
                 # Downsize the image if it's too large for Computer Vision API
                 downsize_image_if_needed(blob_client)
-                
+
                 # Generate SAS token for temporary read access (1 hour)
                 sas_token = generate_blob_sas(
                     account_name=blob_service_client.account_name,
@@ -534,75 +618,93 @@ def select_best_photo(blob_service_client: BlobServiceClient,
                     blob_name=blob.name,
                     account_key=blob_service_client.credential.account_key,
                     permission=BlobSasPermissions(read=True),
-                    expiry=datetime.utcnow() + timedelta(hours=1)
+                    expiry=datetime.utcnow() + timedelta(hours=1),
                 )
                 blob_url = f"{blob_client.url}?{sas_token}"
-                
+
                 # Check if Milo is in the photo (if required)
                 if REQUIRE_MILO_IN_PHOTO:
-                    is_milo_present, milo_confidence = check_milo_in_photo(blob_client, blob_url)
+                    is_milo_present, milo_confidence = check_milo_in_photo(
+                        blob_client, blob_url
+                    )
                     if not is_milo_present:
-                        logging.info(f"Skipping {blob.name}: Milo not detected (confidence: {milo_confidence:.2f})")
+                        logging.info(
+                            f"Skipping {blob.name}: Milo not detected (confidence: {milo_confidence:.2f})"
+                        )
                         continue
-                    logging.info(f"Milo detected in {blob.name} (confidence: {milo_confidence:.2f})")
-                
+                    logging.info(
+                        f"Milo detected in {blob.name} (confidence: {milo_confidence:.2f})"
+                    )
+
                 # Analyze the image
                 logging.info(f"Analyzing blob: {blob.name}")
                 analysis = analyze_image_quality(cv_client, blob_url)
-                
+
                 # Calculate appeal score
                 score = calculate_appeal_score(analysis)
                 logging.info(f"Blob {blob.name} scored: {score:.2f}")
-                
+
                 if score > best_score:
                     best_score = score
                     best_blob = blob
                     best_analysis = analysis
-                    best_blob_url = blob_url  # Save the URL for later GPT-4 Vision analysis
-                    
+                    best_blob_url = (
+                        blob_url  # Save the URL for later GPT-4 Vision analysis
+                    )
+
             except Exception as e:
                 logging.warning(f"Error processing blob {blob.name}: {str(e)}")
                 continue
-        
+
         if best_blob and best_score > MIN_ACCEPTABLE_SCORE:
             logging.info(f"Selected blob: {best_blob.name} with score {best_score:.2f}")
             blob_client = container_client.get_blob_client(best_blob.name)
             image_data = blob_client.download_blob().readall()
-            
+
             # Use GPT-4 Vision to get detailed description of cat's activity and surroundings
             # Fall back to Computer Vision's basic description if GPT-4 Vision fails
             description = ""
             if best_blob_url:  # Should always be set when best_blob is set
-                description = analyze_image_with_vision(text_client, text_model, best_blob_url)
-            
+                description = analyze_image_with_vision(
+                    text_client, text_model, best_blob_url
+                )
+
             # Use Computer Vision description as fallback if GPT-4 Vision returned empty or failed
             if not description:
-                description = best_analysis.get('description', '') if best_analysis else ''
-                logging.info(f"Using Computer Vision description as fallback: {description}")
-            
+                description = (
+                    best_analysis.get("description", "") if best_analysis else ""
+                )
+                logging.info(
+                    f"Using Computer Vision description as fallback: {description}"
+                )
+
             return (image_data, best_blob.name, description)
         else:
-            logging.info(f"No photo met the minimum quality threshold ({MIN_ACCEPTABLE_SCORE})")
+            logging.info(
+                f"No photo met the minimum quality threshold ({MIN_ACCEPTABLE_SCORE})"
+            )
             return None
-            
+
     except Exception as e:
         logging.error(f"Error selecting best photo: {str(e)}")
         return None
 
 
-def extract_milo_characteristics(blob_service_client: BlobServiceClient,
-                                text_client: AzureOpenAI,
-                                text_model: str,
-                                container_name: str) -> str:
+def extract_milo_characteristics(
+    blob_service_client: BlobServiceClient,
+    text_client: AzureOpenAI,
+    text_model: str,
+    container_name: str,
+) -> str:
     """
     Analyze existing Milo photos using GPT-4 Vision to extract detailed visual characteristics.
-    
+
     Args:
         blob_service_client: Azure Blob Storage client
         openai_client: Azure OpenAI client (for GPT-4 Vision)
         gpt4v_deployment: Name of the GPT-4 Vision deployment
         container_name: Name of the blob container
-        
+
     Returns:
         String description of Milo's visual characteristics from GPT-4 Vision
     """
@@ -610,19 +712,21 @@ def extract_milo_characteristics(blob_service_client: BlobServiceClient,
         container_client = blob_service_client.get_container_client(container_name)
         # Get recent photos (last 30 days for a good sample)
         recent_blobs = get_recent_blobs(container_client, days=30)
-        
+
         if not recent_blobs:
-            logging.info("No photos found to analyze Milo's characteristics, using default description")
+            logging.info(
+                "No photos found to analyze Milo's characteristics, using default description"
+            )
             return "an adorable cat"
-        
+
         # Analyze up to 3 recent photos with GPT-4 Vision
         max_to_analyze = min(3, len(recent_blobs))
         image_urls: list[str] = []
-        
+
         for blob in recent_blobs[:max_to_analyze]:
             try:
                 blob_client = container_client.get_blob_client(blob.name)
-                
+
                 # Generate SAS token for temporary read access (1 hour)
                 sas_token = generate_blob_sas(
                     account_name=blob_service_client.account_name,
@@ -630,19 +734,23 @@ def extract_milo_characteristics(blob_service_client: BlobServiceClient,
                     blob_name=blob.name,
                     account_key=blob_service_client.credential.account_key,
                     permission=BlobSasPermissions(read=True),
-                    expiry=datetime.utcnow() + timedelta(hours=1)
+                    expiry=datetime.utcnow() + timedelta(hours=1),
                 )
                 blob_url = f"{blob_client.url}?{sas_token}"
                 image_urls.append(blob_url)
-                
+
             except Exception as e:
-                logging.warning(f"Error preparing blob {blob.name} for GPT-4 Vision: {str(e)}")
+                logging.warning(
+                    f"Error preparing blob {blob.name} for GPT-4 Vision: {str(e)}"
+                )
                 continue
-        
+
         if not image_urls:
-            logging.info("Could not prepare any photos for analysis, using default description")
+            logging.info(
+                "Could not prepare any photos for analysis, using default description"
+            )
             return "an adorable cat"
-        
+
         # Build GPT-4 Vision message with multiple images
         content: list[dict[str, object]] = [
             {
@@ -656,58 +764,62 @@ def extract_milo_characteristics(blob_service_client: BlobServiceClient,
                     "Be specific and detailed, but concise (2-3 sentences max). "
                     "Format your response as: 'a [description] cat' (e.g., 'a fluffy orange tabby cat "
                     "with white paws and green eyes')."
-                )
+                ),
             }
         ]
-        
+
         # Add up to 3 images to the request
         for url in image_urls[:3]:
-            content.append({
-                "type": "image_url",
-                "image_url": {"url": url}
-            })
-        
-        logging.info(f"Analyzing {len(image_urls)} photos with GPT-4 Vision to extract Milo's characteristics")
-        
+            content.append({"type": "image_url", "image_url": {"url": url}})
+
+        logging.info(
+            f"Analyzing {len(image_urls)} photos with GPT-4 Vision to extract Milo's characteristics"
+        )
+
         # Call GPT-4 Vision
         response = text_client.chat.completions.create(
             model=text_model,
             messages=[
                 {
                     "role": "system",
-                    "content": "You are an expert at analyzing and describing cat appearances for image generation."
+                    "content": "You are an expert at analyzing and describing cat appearances for image generation.",
                 },
-                {
-                    "role": "user",
-                    "content": content
-                } # type: ignore
+                {"role": "user", "content": content},  # type: ignore
             ],
-            max_tokens=300
+            max_tokens=300,
         )
-        
-        description = response.choices[0].message.content.strip() if response.choices[0].message.content else ""
-        
+
+        description = (
+            response.choices[0].message.content.strip()
+            if response.choices[0].message.content
+            else ""
+        )
+
         # Clean up the description if needed
         if not description:
             description = "an adorable gray cat with a grumpy looking face"
         if not description.startswith("a ") and not description.startswith("an "):
             description = f"an adorable {description}"
-        
+
         logging.info(f"GPT-4 Vision extracted Milo's characteristics: {description}")
         return description
-        
+
     except Exception as e:
-        logging.error(f"Error extracting Milo's characteristics with GPT-4 Vision: {str(e)}")
+        logging.error(
+            f"Error extracting Milo's characteristics with GPT-4 Vision: {str(e)}"
+        )
         return "an adorable cat"
 
 
-def select_mood_and_prompt(milo_description: str = "an adorable cat") -> Tuple[str, str]:
+def select_mood_and_prompt(
+    milo_description: str = "an adorable cat",
+) -> Tuple[str, str]:
     """
     Randomly select a mood and generate a corresponding prompt for Milo's AI image.
-    
+
     Args:
         milo_description: Visual description of Milo's appearance (from photo analysis)
-    
+
     Returns:
         Tuple of (mood, prompt) for image generation
     """
@@ -759,33 +871,36 @@ def select_mood_and_prompt(milo_description: str = "an adorable cat") -> Tuple[s
             "Milo is nestled in a warm spot, perhaps on a soft blanket or cushion, looking perfectly content. "
             "The photo captures a heartwarming moment of domestic bliss and comfort. "
             "Warm, inviting lighting, sharp focus, photorealistic style."
-        )
+        ),
     }
-    
+
     mood = random.choice(list(moods.keys()))
     prompt = moods[mood]
-    
+
     return mood, prompt
 
 
-def generate_ai_image(client: AzureOpenAI, image_model: str,
-                      text_client: Optional[AzureOpenAI] = None,
-                      text_model: Optional[str] = None,
-                      blob_service_client: Optional[BlobServiceClient] = None,
-                      container_name: Optional[str] = None) -> Optional[bytes]:
+def generate_ai_image(
+    client: AzureOpenAI,
+    image_model: str,
+    text_client: Optional[AzureOpenAI] = None,
+    text_model: Optional[str] = None,
+    blob_service_client: Optional[BlobServiceClient] = None,
+    container_name: Optional[str] = None,
+) -> Optional[bytes]:
     """
     Generate an AI image of Milo using Azure OpenAI DALL-E.
     Uses mood-based prompts to create varied and personalized images of Milo.
     If blob storage client and GPT-4 Vision deployment are provided, analyzes existing
     photos using GPT-4 Vision to extract Milo's visual characteristics for accurate generation.
-    
+
     Args:
         client: Azure OpenAI client
         deployment_name: Name of the DALL-E deployment
         gpt4v_deployment: Optional GPT-4 Vision deployment name for analyzing photos
         blob_service_client: Optional Azure Blob Storage client for accessing existing photos
         container_name: Optional container name where Milo's photos are stored
-        
+
     Returns:
         Image bytes or None if generation failed
     """
@@ -796,10 +911,10 @@ def generate_ai_image(client: AzureOpenAI, image_model: str,
             milo_description = extract_milo_characteristics(
                 blob_service_client, text_client, text_model, container_name
             )
-        
+
         # Select a random mood and get corresponding prompt with Milo's characteristics
         mood, prompt = select_mood_and_prompt(milo_description)
-        
+
         logging.info(f"Generating AI image with {image_model} using '{mood}' mood")
         logging.info(f"Milo's appearance: {milo_description}")
         response = client.images.generate(
@@ -808,25 +923,25 @@ def generate_ai_image(client: AzureOpenAI, image_model: str,
             n=1,
             size="1024x1024",
             quality="hd",
-            style="natural"
+            style="natural",
         )
-        
+
         # Get the image URL and download it
         if not response.data:
             logging.error("Failed to generate an image with DALL-E")
             return None
-        
+
         image_url = response.data[0].url
         if not image_url:
             logging.error("Failed to generate image url")
             return None
-        
-        image_response = requests.get(image_url)
+
+        image_response = requests.get(image_url, timeout=30)
         image_response.raise_for_status()
-        
+
         logging.info(f"AI image generated successfully with '{mood}' mood")
         return image_response.content
-        
+
     except Exception as e:
         logging.error(f"Error generating AI image: {str(e)}")
         return None
@@ -834,38 +949,51 @@ def generate_ai_image(client: AzureOpenAI, image_model: str,
 
 def get_current_weather() -> Optional[Dict[str, Any]]:
     """
-    Fetch current weather conditions from OpenWeatherMap API.
-    
+    Fetch current weather conditions from OpenWeatherMap One Call API 3.0.
+
+    API Documentation: https://openweathermap.org/api/one-call-3
+
     Returns:
-        Dictionary with weather information or None if fetch fails
+        Dictionary with weather information or None if fetch fails:
+        {
+            "description": str,  # e.g., "clear sky", "light rain"
+            "temperature": int,  # Temperature in Fahrenheit (rounded)
+            "feels_like": int    # Feels-like temperature in Fahrenheit (rounded)
+        }
     """
     if not WEATHER_API_KEY:
         logging.info("Weather API key not configured, skipping weather fetch")
         return None
-    
+
     try:
-        url = "https://api.openweathermap.org/data/2.5/weather"
+        url = "https://api.openweathermap.org/data/3.0/onecall"
         params = {
-            "q": WEATHER_LOCATION,
+            "lat": WEATHER_LAT,
+            "lon": WEATHER_LON,  # Note: API uses 'lon' not 'long'
             "appid": WEATHER_API_KEY,
-            "units": "imperial"  # Fahrenheit
+            "units": "imperial",  # Fahrenheit
+            "exclude": "minutely,hourly,daily,alerts",  # Only get current weather
         }
-        
+
         response = requests.get(url, params=params, timeout=5)
         response.raise_for_status()
         data = response.json()
-        
-        # Extract relevant weather info
+
+        # Extract relevant weather info from One Call API 3.0 response format
+        current = data["current"]
         weather_info = {
-            "description": data["weather"][0]["description"],  # e.g., "clear sky", "light rain"
-            "temperature": round(data["main"]["temp"]),  # Fahrenheit
-            "feels_like": round(data["main"]["feels_like"]),
-            "location": data["name"]
+            "description": current["weather"][0][
+                "description"
+            ],  # e.g., "clear sky", "light rain"
+            "temperature": round(current["temp"]),  # Fahrenheit
+            "feels_like": round(current["feels_like"]),
         }
-        
-        logging.info(f"Weather fetched: {weather_info['description']}, {weather_info['temperature']}°F in {weather_info['location']}")
+
+        logging.info(
+            f"Weather fetched: {weather_info['description']}, {weather_info['temperature']}°F"
+        )
         return weather_info
-        
+
     except Exception as e:
         logging.warning(f"Failed to fetch weather data: {str(e)}")
         return None
@@ -874,15 +1002,15 @@ def get_current_weather() -> Optional[Dict[str, Any]]:
 def get_current_context() -> Dict[str, Any]:
     """
     Get current temporal context including day of week, season, weather, and notable dates.
-    
+
     Returns:
         Dictionary containing contextual information
     """
     now = datetime.utcnow()
-    
+
     # Day of week
     day_name = calendar.day_name[now.weekday()]
-    
+
     # Season (Northern Hemisphere)
     month = now.month
     if month in [12, 1, 2]:
@@ -893,113 +1021,119 @@ def get_current_context() -> Dict[str, Any]:
         season = "summer"
     else:
         season = "fall"
-    
+
     # Get current weather
     weather = get_current_weather()
-    
+
     # Check for notable holidays/dates
     holidays = []
-    
+
     # New Year's
     if month == 1 and now.day == 1:
         holidays.append("New Year's Day")
-    
+
     # Valentine's Day
     if month == 2 and now.day == 14:
         holidays.append("Valentine's Day")
-    
+
     # St. Patrick's Day
     if month == 3 and now.day == 17:
         holidays.append("St. Patrick's Day")
-    
+
     # April Fool's Day
     if month == 4 and now.day == 1:
         holidays.append("April Fool's Day")
-    
+
     # Halloween
     if month == 10 and now.day == 31:
         holidays.append("Halloween")
-    
+
     # Thanksgiving (4th Thursday of November)
     if month == 11:
         # Find the first day of November
-        first_day_weekday = calendar.monthrange(now.year, 11)[0]  # 0 = Monday, 6 = Sunday
-        
+        first_day_weekday = calendar.monthrange(now.year, 11)[
+            0
+        ]  # 0 = Monday, 6 = Sunday
+
         # Thursday is weekday 3
         # Calculate the date of the first Thursday
         days_until_thursday = (3 - first_day_weekday) % 7
         first_thursday = 1 + days_until_thursday
-        
+
         # 4th Thursday is 3 weeks (21 days) after the first Thursday
         fourth_thursday = first_thursday + 21
-        
+
         if now.day == fourth_thursday:
             holidays.append("Thanksgiving")
-    
+
     # Christmas
     if month == 12 and now.day == 25:
         holidays.append("Christmas")
-    
+
     # New Year's Eve
     if month == 12 and now.day == 31:
         holidays.append("New Year's Eve")
-    
+
     return {
         "day_of_week": day_name,
         "season": season,
         "holidays": holidays,
         "weather": weather,
-        "date": now.strftime("%B %d, %Y")
+        "date": now.strftime("%B %d, %Y"),
     }
 
 
-def generate_witty_caption(openai_client: AzureOpenAI, 
-                          text_model: str,
-                          context: Dict[str, Any],
-                          image_description: str = "") -> str:
+def generate_witty_caption(
+    openai_client: AzureOpenAI,
+    text_model: str,
+    context: Dict[str, Any],
+    image_description: str = "",
+) -> str:
     """
     Generate a witty, socially engaging caption using AI based on context and image content.
-    
+
     Args:
         openai_client: Azure OpenAI client
         gpt_deployment: Name of the GPT deployment to use
         context: Contextual information (day of week, season, holidays)
         image_description: Optional description of the image content
-        
+
     Returns:
         A witty caption string
     """
     try:
         # Build context string with variance to add variety to captions
         context_parts = []
-        
+
         # 40% chance to include day of week
         if random.random() < 0.4:
             context_parts.append(f"It's {context['day_of_week']}")
-        
+
         # Include actual weather data when available (60% of the time)
-        if context.get('weather') and random.random() < 0.6:
-            weather = context['weather']
-            weather_desc = weather['description']
-            temp = weather['temperature']
+        if context.get("weather") and random.random() < 0.6:
+            weather = context["weather"]
+            weather_desc = weather["description"]
+            temp = weather["temperature"]
             context_parts.append(f"weather is {weather_desc}, {temp}°F")
-        
+
         # Always include holidays when present (they're special and worth mentioning)
-        if context['holidays']:
+        if context["holidays"]:
             context_parts.append(f"it's {', '.join(context['holidays'])}")
-        
+
         # Build context string only if we have context to include
         context_str = ", ".join(context_parts) + "." if context_parts else ""
-        
+
         # Build prompt
-        prompt_parts = ["You are a witty social media caption writer for Milo, a grumpy but lovable cat with a sassy personality."]
-        
+        prompt_parts = [
+            "You are a witty social media caption writer for Milo, a grumpy but lovable cat with a sassy personality."
+        ]
+
         if context_str:
             prompt_parts.append(f"\nContext: {context_str}")
-        
+
         if image_description:
             prompt_parts.append(f"\nImage description: {image_description}")
-        
+
         prompt_parts.append("""
 
 Generate a SHORT, witty, and engaging caption (maximum 15 words) that:
@@ -1009,39 +1143,36 @@ Generate a SHORT, witty, and engaging caption (maximum 15 words) that:
 - Uses a conversational tone that cats might use if they could talk
 
 Return ONLY the caption text, nothing else.""")
-        
+
         prompt = "".join(prompt_parts)
 
         logging.info(f"Generating witty caption with context: {context_str}")
-        
+
         response = openai_client.chat.completions.create(
             model=text_model,
             messages=[
                 {
                     "role": "system",
-                    "content": "You are a creative social media caption writer specializing in humorous cat content."
+                    "content": "You are a creative social media caption writer specializing in humorous cat content.",
                 },
-                {
-                    "role": "user",
-                    "content": prompt
-                }
+                {"role": "user", "content": prompt},
             ],
-            temperature=CAPTION_TEMPERATURE
+            temperature=CAPTION_TEMPERATURE,
         )
-        
+
         if not response.choices[0].message.content:
             raise ValueError()
         caption = response.choices[0].message.content.strip()
-        
+
         # Clean up the caption - remove quotes if present
         if caption.startswith('"') and caption.endswith('"'):
             caption = caption[1:-1]
         if caption.startswith("'") and caption.endswith("'"):
             caption = caption[1:-1]
-        
+
         logging.info(f"Generated witty caption: {caption}")
         return caption
-        
+
     except Exception as e:
         logging.error(f"Error generating witty caption: {str(e)}")
         # Fallback to simple captions
@@ -1050,90 +1181,90 @@ Return ONLY the caption text, nothing else.""")
             "I'm not grumpy, this is just my face.",
             "Existing is exhausting.",
             "Did someone say treats?",
-            "Professional napper reporting for duty."
+            "Professional napper reporting for duty.",
         ]
         return random.choice(fallback_captions)
 
 
-def post_to_postly(api_key: str, workspace_id: str, 
-                   image_data: bytes, caption: str, target_platforms: Optional[str] = None) -> bool:
+def post_to_postly(
+    api_key: str,
+    workspace_id: str,
+    image_data: bytes,
+    caption: str,
+    target_platforms: Optional[str] = None,
+) -> bool:
     """
     Post image to Postly API.
-    
+
     Args:
         api_key: Postly API key
         workspace_id: Postly workspace ID
         image_data: Image bytes to upload
         caption: Caption for the post
         target_platforms: Comma-separated list of platform account IDs (optional)
-        
+
     Returns:
         True if successful, False otherwise
     """
     try:
-        headers = {
-            "X-API-KEY": api_key
-        }
-        
+        headers = {"X-API-KEY": api_key}
+
         upload_url = "https://openapi.postly.ai/v1/files"
-        
+
         # Step 1: Upload the image
         # Reference: https://docs.postly.ai/upload-a-file-17449007e0
         logging.info(f"Uploading image to Postly ({len(image_data) / 1024:.1f}KB)")
-        
+
         upload_headers = headers.copy()
         upload_headers["X-File-Size"] = str(len(image_data))
-        
-        files = {
-            "file": ("milo.jpg", image_data, "image/jpeg")
-        }
-        
-        upload_response = requests.post(upload_url, headers=upload_headers, files=files)
+
+        files = {"file": ("milo.jpg", image_data, "image/jpeg")}
+
+        upload_response = requests.post(
+            upload_url, headers=upload_headers, files=files, timeout=30
+        )
         upload_response.raise_for_status()
-        
+
         upload_data = upload_response.json()
         image_url = upload_data.get("data", {}).get("url")
-        
+
         if not image_url:
             logging.error(f"No URL returned from upload. Response: {upload_data}")
             return False
-        
+
         logging.info(f"Image uploaded successfully. URL: {image_url}")
-        
+
         # Step 2: Create a post with the uploaded media
         # Reference: https://docs.postly.ai/create-a-post-17486212e0
         post_url = "https://openapi.postly.ai/v1/posts"
-        
+
         post_data = {
             "workspace": workspace_id,
             "text": caption,
-            "media": [
-                {
-                    "url": image_url,
-                    "type": "image/jpeg"
-                }
-            ],
-            "post_now": True
+            "media": [{"url": image_url, "type": "image/jpeg"}],
+            "post_now": True,
         }
-        
+
         # Add target platforms if provided
         if target_platforms:
             post_data["target_platforms"] = target_platforms
             logging.info(f"Targeting platforms: {target_platforms}")
         else:
             post_data["target_platforms"] = "all"
-        
+
         logging.info("Creating post on Postly")
-        post_response = requests.post(post_url, headers=headers, json=post_data)
+        post_response = requests.post(
+            post_url, headers=headers, json=post_data, timeout=10
+        )
         post_response.raise_for_status()
-        
+
         post_result = post_response.json()
         logging.info(f"Successfully posted to Postly. Response: {post_result}")
         return True
-        
+
     except requests.exceptions.RequestException as e:
         logging.error(f"Error posting to Postly: {str(e)}")
-        if hasattr(e, 'response') and e.response is not None:
+        if hasattr(e, "response") and e.response is not None:
             logging.error(f"Response status: {e.response.status_code}")
             logging.error(f"Response body: {e.response.text}")
         return False
@@ -1144,60 +1275,70 @@ def post_to_postly(api_key: str, workspace_id: str,
 
 @app.timer_trigger(
     schedule="0 0 17 * * *",  # Cron: sec min hour day month day-of-week (10:00 AM UTC daily)
-    arg_name="timer", 
-    run_on_startup=False
+    arg_name="timer",
+    run_on_startup=False,
 )
 def daily_milo_post(timer: func.TimerRequest) -> None:
     """
     Azure Function triggered daily at 10:00 AM UTC to post a Milo photo.
-    
+
     Args:
         timer: Timer trigger information
     """
     logging.info("Daily Milo Photo Poster function started")
-    
+
     # Validate configuration
-    if not all([AZURE_STORAGE_CONNECTION_STRING, COMPUTER_VISION_ENDPOINT, 
-                COMPUTER_VISION_KEY, OPENAI_TEXT_API_KEY, OPENAI_IMAGE_ENDPOINT,
-                POSTLY_API_KEY, POSTLY_WORKSPACE_ID, OPENAI_TEXT_ENDPOINT]):
-        logging.error("Missing required configuration. Please check environment variables.")
+    if not all(
+        [
+            AZURE_STORAGE_CONNECTION_STRING,
+            COMPUTER_VISION_ENDPOINT,
+            COMPUTER_VISION_KEY,
+            OPENAI_TEXT_API_KEY,
+            OPENAI_IMAGE_ENDPOINT,
+            POSTLY_API_KEY,
+            POSTLY_WORKSPACE_ID,
+            OPENAI_TEXT_ENDPOINT,
+        ]
+    ):
+        logging.error(
+            "Missing required configuration. Please check environment variables."
+        )
         return
-    
+
     image_data = None
     image_source = None
     image_description = ""
     blob_name = None  # Track blob name for marking as posted
-    
+
     try:
         # Step 1: Try to select best photo from blob storage
         logging.info("Attempting to select photo from blob storage")
         blob_service_client = BlobServiceClient.from_connection_string(
             AZURE_STORAGE_CONNECTION_STRING
         )
-        
+
         cv_credentials = CognitiveServicesCredentials(COMPUTER_VISION_KEY)
         cv_client = ComputerVisionClient(COMPUTER_VISION_ENDPOINT, cv_credentials)
-        
+
         # Initialize separate OpenAI clients for image and text
         image_client = AzureOpenAI(
             api_key=OPENAI_IMAGE_API_KEY,
             api_version="2024-02-01",
-            azure_endpoint=OPENAI_IMAGE_ENDPOINT # type: ignore
+            azure_endpoint=OPENAI_IMAGE_ENDPOINT,  # type: ignore
         )
         text_client = AzureOpenAI(
             api_key=OPENAI_TEXT_API_KEY,
             api_version="2024-02-01",
-            azure_endpoint=OPENAI_TEXT_ENDPOINT # type: ignore
+            azure_endpoint=OPENAI_TEXT_ENDPOINT,  # type: ignore
         )
-        
 
         result = select_best_photo(
-            blob_service_client, 
+            blob_service_client,
             cv_client,
             text_client,
             OPENAI_TEXT_MODEL,
             BLOB_CONTAINER_NAME,
-            DAYS_TO_CHECK
+            DAYS_TO_CHECK,
         )
 
         if result:
@@ -1212,7 +1353,7 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
                 text_client=text_client,
                 text_model=OPENAI_TEXT_MODEL,
                 blob_service_client=blob_service_client,
-                container_name=BLOB_CONTAINER_NAME
+                container_name=BLOB_CONTAINER_NAME,
             )
             image_source = "AI generated (OpenAI)"
             image_description = "AI-generated image of Milo"
@@ -1227,7 +1368,7 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
             text_client,
             text_model=OPENAI_TEXT_MODEL,
             context=context,
-            image_description=image_description
+            image_description=image_description,
         )
 
         # Format caption: "Daily Milo! 😾" + witty caption + hashtags
@@ -1237,11 +1378,11 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
 
         # Step 4: Post to Postly
         success = post_to_postly(
-            POSTLY_API_KEY, # type: ignore
-            POSTLY_WORKSPACE_ID, # type: ignore
+            POSTLY_API_KEY,  # type: ignore
+            POSTLY_WORKSPACE_ID,  # type: ignore
             image_data,
             caption,
-            POSTLY_TARGET_PLATFORMS
+            POSTLY_TARGET_PLATFORMS,
         )
 
         if success:
@@ -1249,7 +1390,9 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
             # Mark blob as posted to avoid duplicates
             if blob_name:
                 try:
-                    container_client = blob_service_client.get_container_client(BLOB_CONTAINER_NAME)
+                    container_client = blob_service_client.get_container_client(
+                        BLOB_CONTAINER_NAME
+                    )
                     blob_client = container_client.get_blob_client(blob_name)
                     mark_blob_as_posted(blob_client)
                 except Exception as e:
