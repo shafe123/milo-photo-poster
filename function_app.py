@@ -1001,7 +1001,7 @@ def generate_ai_image(
         if caption_context.strip():
             prompt += (
                 " Match the scene to this caption context while staying photorealistic: "
-                f"\"{caption_context.strip()}\"."
+                f"\"{caption_context.strip()}\""
             )
 
         logging.info(f"Generating AI image with {image_model} using '{mood}' mood")

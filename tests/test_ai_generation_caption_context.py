@@ -34,7 +34,7 @@ def test_daily_milo_post_passes_caption_context_to_ai_generation():
         mock_blob_service.from_connection_string.return_value = Mock()
         daily_milo_post(Mock())
 
-        assert mock_generate_ai_image.call_count == 1
+        mock_generate_ai_image.assert_called_once()
         assert (
             mock_generate_ai_image.call_args.kwargs['caption_context']
             == 'Rainy day window watching'
