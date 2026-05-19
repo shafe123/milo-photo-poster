@@ -136,24 +136,49 @@ jobs:
         steps:
             - name: "Checkout repository"
               uses: actions/checkout@v4
+              with:
+                  fetch-depth: 0 # Fetch all history to compare changes
+
+            - name: "Check for code changes"
+              id: changed-files
+              run: |
+                  # Get list of changed files in this push
+                  if [ "${{ github.event.before }}" == "0000000000000000000000000000000000000000" ]; then
+                    # First push to branch, deploy everything
+                    echo "code_changed=true" >> $GITHUB_OUTPUT
+                  else
+                    # Check if any Python code, requirements, or config files changed
+                    changed=$(git diff --name-only ${{ github.event.before }} ${{ github.sha }} | grep -E '\.(py|txt)$|host\.json|pyproject\.toml' || true)
+                    if [ -n "$changed" ]; then
+                      echo "code_changed=true" >> $GITHUB_OUTPUT
+                      echo "Code files changed, deployment will proceed"
+                    else
+                      echo "code_changed=false" >> $GITHUB_OUTPUT
+                      echo "No code changes detected, skipping deployment"
+                    fi
+                  fi
 
             - name: "Setup Python ${{ env.PYTHON_VERSION }}"
+              if: steps.changed-files.outputs.code_changed == 'true'
               uses: actions/setup-python@v5
               with:
                   python-version: ${{ env.PYTHON_VERSION }}
 
             - name: "Create and activate virtual environment"
+              if: steps.changed-files.outputs.code_changed == 'true'
               run: |
                   python -m venv .venv
                   source .venv/bin/activate
                   echo "Virtual environment activated"
 
             - name: "Install dependencies"
+              if: steps.changed-files.outputs.code_changed == 'true'
               run: |
                   python -m pip install --upgrade pip
                   pip install -r requirements.txt --target=".python_packages/lib/site-packages"
 
             - name: "Login to Azure"
+              if: steps.changed-files.outputs.code_changed == 'true'
               uses: azure/login@v2
               with:
                   client-id: ${{ secrets.AZUREAPPSERVICE_CLIENTID_4759DD04EF84428C80532C3FC114B339 }}
@@ -161,6 +186,7 @@ jobs:
                   subscription-id: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_01D91C344C0E401F82C1E310A3BACCE4 }}
 
             - name: "Install Azure Functions Core Tools"
+              if: steps.changed-files.outputs.code_changed == 'true'
               run: |
                   curl https://packages.microsoft.com/keys/microsoft.asc | gpg --dearmor > microsoft.gpg
                   sudo mv microsoft.gpg /etc/apt/trusted.gpg.d/microsoft.gpg
@@ -169,16 +195,23 @@ jobs:
                   sudo apt-get install azure-functions-core-tools-4
 
             - name: "Deploy to Azure Functions (Flex Consumption)"
+              if: steps.changed-files.outputs.code_changed == 'true'
               run: |
                   func azure functionapp publish ${{ env.AZURE_FUNCTIONAPP_NAME }} --python
               env:
                   AZURE_SUBSCRIPTION_ID: ${{ secrets.AZUREAPPSERVICE_SUBSCRIPTIONID_01D91C344C0E401F82C1E310A3BACCE4 }}
 
             - name: "Deployment Summary"
-              if: success()
+              if: success() && steps.changed-files.outputs.code_changed == 'true'
               run: |
                   echo "✓ Deployment completed successfully!"
                   echo "Function App: ${{ env.AZURE_FUNCTIONAPP_NAME }}"
                   echo "Python Version: ${{ env.PYTHON_VERSION }}"
                   echo ""
                   echo "Note: Application settings are managed separately via deploy-settings.ps1"
+
+            - name: "Deployment Skipped"
+              if: steps.changed-files.outputs.code_changed == 'false'
+              run: |
+                  echo "ℹ️ Deployment skipped - no code changes detected"
+                  echo "Only documentation or workflow files were modified"
