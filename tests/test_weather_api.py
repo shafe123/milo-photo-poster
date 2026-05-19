@@ -58,15 +58,9 @@ def test_weather_api_real_call():
     assert "feels_like" in weather_info, "Weather info should include feels_like"
 
     # Verify data types
-    assert isinstance(weather_info["description"], str), (
-        "Description should be a string"
-    )
-    assert isinstance(weather_info["temperature"], (int, float)), (
-        "Temperature should be numeric"
-    )
-    assert isinstance(weather_info["feels_like"], (int, float)), (
-        "Feels_like should be numeric"
-    )
+    assert isinstance(weather_info["description"], str), "Description should be a string"
+    assert isinstance(weather_info["temperature"], (int, float)), "Temperature should be numeric"
+    assert isinstance(weather_info["feels_like"], (int, float)), "Feels_like should be numeric"
 
     # Verify reasonable temperature ranges (in Fahrenheit)
     assert -100 <= weather_info["temperature"] <= 150, (
@@ -135,9 +129,7 @@ def test_weather_api_no_key():
         weather_info = get_current_weather()
 
         # Verify it returns None gracefully
-        assert weather_info is None, (
-            "Weather API should return None when API key is not configured"
-        )
+        assert weather_info is None, "Weather API should return None when API key is not configured"
 
     finally:
         # Restore original key

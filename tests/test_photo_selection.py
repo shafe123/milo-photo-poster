@@ -46,9 +46,7 @@ def test_random_sampling_when_exceeds_limit():
                 with patch(
                     "function_app.analyze_image_quality",
                     return_value={
-                        "description": {
-                            "captions": [{"text": "test", "confidence": 0.1}]
-                        },
+                        "description": {"captions": [{"text": "test", "confidence": 0.1}]},
                         "tags": [],
                         "adult": {"isAdultContent": False, "isRacyContent": False},
                         "color": {"isBWImg": False},
@@ -56,9 +54,7 @@ def test_random_sampling_when_exceeds_limit():
                     },
                 ) as mock_analyze:
                     with patch("function_app.calculate_appeal_score", return_value=0):
-                        with patch(
-                            "function_app.generate_blob_sas", return_value="sas_token"
-                        ):
+                        with patch("function_app.generate_blob_sas", return_value="sas_token"):
                             mock_container_client.get_blob_client = MagicMock(
                                 side_effect=lambda name: Mock(url=f"http://test/{name}")
                             )
@@ -105,9 +101,7 @@ def test_no_sampling_when_under_limit():
                 with patch(
                     "function_app.analyze_image_quality",
                     return_value={
-                        "description": {
-                            "captions": [{"text": "test", "confidence": 0.1}]
-                        },
+                        "description": {"captions": [{"text": "test", "confidence": 0.1}]},
                         "tags": [],
                         "adult": {"isAdultContent": False, "isRacyContent": False},
                         "color": {"isBWImg": False},
@@ -115,9 +109,7 @@ def test_no_sampling_when_under_limit():
                     },
                 ) as mock_analyze:
                     with patch("function_app.calculate_appeal_score", return_value=0):
-                        with patch(
-                            "function_app.generate_blob_sas", return_value="sas_token"
-                        ):
+                        with patch("function_app.generate_blob_sas", return_value="sas_token"):
                             mock_container_client.get_blob_client = MagicMock(
                                 side_effect=lambda name: Mock(url=f"http://test/{name}")
                             )
@@ -194,9 +186,7 @@ def test_boundary_condition_exact_limit():
                 with patch(
                     "function_app.analyze_image_quality",
                     return_value={
-                        "description": {
-                            "captions": [{"text": "test", "confidence": 0.1}]
-                        },
+                        "description": {"captions": [{"text": "test", "confidence": 0.1}]},
                         "tags": [],
                         "adult": {"isAdultContent": False, "isRacyContent": False},
                         "color": {"isBWImg": False},
@@ -204,9 +194,7 @@ def test_boundary_condition_exact_limit():
                     },
                 ) as mock_analyze:
                     with patch("function_app.calculate_appeal_score", return_value=0):
-                        with patch(
-                            "function_app.generate_blob_sas", return_value="sas_token"
-                        ):
+                        with patch("function_app.generate_blob_sas", return_value="sas_token"):
                             mock_container_client.get_blob_client = MagicMock(
                                 side_effect=lambda name: Mock(url=f"http://test/{name}")
                             )
@@ -286,9 +274,7 @@ def test_duplicate_avoidance_filters_posted_photos():
                 },
             ) as mock_analyze:
                 with patch("function_app.calculate_appeal_score", return_value=0):
-                    with patch(
-                        "function_app.generate_blob_sas", return_value="sas_token"
-                    ):
+                    with patch("function_app.generate_blob_sas", return_value="sas_token"):
                         with patch("function_app.POSTED_HISTORY_DAYS", 30):
                             # Call select_best_photo
                             mock_text_client = MagicMock()

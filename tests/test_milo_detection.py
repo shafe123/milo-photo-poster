@@ -379,9 +379,7 @@ def test_milo_detection_url_trailing_slash_handling():
 
     # Mock Custom Vision API response
     mock_response = Mock()
-    mock_response.json.return_value = {
-        "predictions": [{"tagName": "milo", "probability": 0.85}]
-    }
+    mock_response.json.return_value = {"predictions": [{"tagName": "milo", "probability": 0.85}]}
     mock_response.raise_for_status = Mock()
 
     with patch("requests.post", return_value=mock_response) as mock_post:

@@ -18,7 +18,7 @@ import hashlib
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 
-def download_from_unsplash(count: int = 20, api_key: str = None) -> List[str]:
+def download_from_unsplash(count: int = 20, api_key: str = None) -> List[tuple[str, bytes]]:
     """
     Download cat images from Unsplash API.
 
@@ -60,7 +60,7 @@ def download_from_unsplash(count: int = 20, api_key: str = None) -> List[str]:
     return downloaded
 
 
-def download_from_pexels(count: int = 20, api_key: str = None) -> List[str]:
+def download_from_pexels(count: int = 20, api_key: str = None) -> List[tuple[str, bytes]]:
     """
     Download cat images from Pexels API.
 
@@ -112,7 +112,7 @@ def download_from_pexels(count: int = 20, api_key: str = None) -> List[str]:
     return downloaded
 
 
-def download_from_wikimedia_commons(count: int = 20) -> List[str]:
+def download_from_wikimedia_commons(count: int = 20) -> List[tuple[str, bytes]]:
     """
     Download cat images from Wikimedia Commons (no API key needed).
     """
@@ -134,9 +134,7 @@ def download_from_wikimedia_commons(count: int = 20) -> List[str]:
             "iiurlwidth": 1024,
         }
 
-        headers = {
-            "User-Agent": "MiloPhotoPoster/1.0 (Custom Vision Training; ethan@example.com)"
-        }
+        headers = {"User-Agent": "MiloPhotoPoster/1.0 (Custom Vision Training; ethan@example.com)"}
 
         response = requests.get(url, params=params, headers=headers)
         response.raise_for_status()
@@ -153,9 +151,7 @@ def download_from_wikimedia_commons(count: int = 20) -> List[str]:
                 imageinfo = page.get("imageinfo", [{}])[0]
                 image_url = imageinfo.get("thumburl") or imageinfo.get("url")
 
-                if not image_url or not image_url.lower().endswith(
-                    (".jpg", ".jpeg", ".png")
-                ):
+                if not image_url or not image_url.lower().endswith((".jpg", ".jpeg", ".png")):
                     continue
 
                 # Download the image
@@ -183,7 +179,7 @@ def download_from_wikimedia_commons(count: int = 20) -> List[str]:
     return downloaded
 
 
-def download_from_public_urls(count: int = 20) -> List[str]:
+def download_from_public_urls(count: int = 20) -> List[tuple[str, bytes]]:
     """
     Download cat images from curated public URLs.
     These are freely available cat images from various sources.
@@ -217,9 +213,7 @@ def download_from_public_urls(count: int = 20) -> List[str]:
 
     for i, url in enumerate(public_cat_urls[:count]):
         try:
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
-            }
+            headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
             response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
 
@@ -296,24 +290,18 @@ def main():
     parser = argparse.ArgumentParser(
         description="Download cat images for negative training examples"
     )
-    parser.add_argument(
-        "--count", type=int, default=30, help="Total number of images to download"
-    )
+    parser.add_argument("--count", type=int, default=30, help="Total number of images to download")
     parser.add_argument("--unsplash-key", help="Unsplash API key (optional)")
     parser.add_argument("--pexels-key", help="Pexels API key (optional)")
     parser.add_argument(
         "--output-dir", default="negative_cat_images", help="Local output directory"
     )
-    parser.add_argument(
-        "--upload", action="store_true", help="Upload to Azure Blob Storage"
-    )
+    parser.add_argument("--upload", action="store_true", help="Upload to Azure Blob Storage")
     parser.add_argument(
         "--connection-string",
         help="Azure Storage connection string (from env if not provided)",
     )
-    parser.add_argument(
-        "--container", default="milo-photos", help="Blob container name"
-    )
+    parser.add_argument("--container", default="milo-photos", help="Blob container name")
 
     args = parser.parse_args()
 
@@ -377,9 +365,7 @@ def main():
     print(f"  1. Review images in: {Path(args.output_dir).absolute()}")
     print("  2. Go to https://www.customvision.ai/")
     print("  3. Open your project: milo-description")
-    print(
-        "  4. Upload images and tag them as 'Negative' (or create a new tag like 'other-cats')"
-    )
+    print("  4. Upload images and tag them as 'Negative' (or create a new tag like 'other-cats')")
     print("  5. Train a new iteration")
     print("=" * 80)
 

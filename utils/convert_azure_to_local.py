@@ -5,7 +5,7 @@ with open("azure_appsettings.json", "r") as f:
     azure_settings = json.load(f)
 
 # Convert to local.settings.json format
-local_settings = {
+local_settings: dict[str, object] = {
     "IsEncrypted": False,
     "Values": {
         "AzureWebJobsStorage": "<your-azurewebjobs-storage-connection-string>",
@@ -18,7 +18,9 @@ for setting in azure_settings:
     key = setting.get("name")
     value = setting.get("value")
     if key and value:
-        local_settings["Values"][key] = value
+        values_dict = local_settings["Values"]
+        assert isinstance(values_dict, dict)
+        values_dict[key] = value
 
 # Write to local.settings.json
 with open("local.settings.json", "w") as f:

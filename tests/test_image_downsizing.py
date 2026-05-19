@@ -38,9 +38,7 @@ def test_downsize_not_needed_for_small_image():
     mock_blob_client.get_blob_properties.return_value = mock_properties
 
     # Call downsize function
-    result = downsize_image_if_needed(
-        mock_blob_client, max_size_bytes=MAX_IMAGE_SIZE_BYTES
-    )
+    result = downsize_image_if_needed(mock_blob_client, max_size_bytes=MAX_IMAGE_SIZE_BYTES)
 
     # Should return False (no downsizing needed)
     assert result is False
@@ -68,9 +66,7 @@ def test_downsize_needed_for_large_image():
     mock_blob_client.download_blob.return_value = mock_download
 
     # Call downsize function
-    result = downsize_image_if_needed(
-        mock_blob_client, max_size_bytes=MAX_IMAGE_SIZE_BYTES
-    )
+    result = downsize_image_if_needed(mock_blob_client, max_size_bytes=MAX_IMAGE_SIZE_BYTES)
 
     # Should return True (downsizing happened)
     assert result is True
@@ -103,9 +99,7 @@ def test_downsize_maintains_aspect_ratio():
     mock_blob_client.download_blob.return_value = mock_download
 
     # Call downsize function
-    result = downsize_image_if_needed(
-        mock_blob_client, max_size_bytes=MAX_IMAGE_SIZE_BYTES
-    )
+    result = downsize_image_if_needed(mock_blob_client, max_size_bytes=MAX_IMAGE_SIZE_BYTES)
 
     assert result is True
     assert mock_blob_client.upload_blob.called
@@ -126,9 +120,7 @@ def test_downsize_maintains_aspect_ratio():
     # Aspect ratio should be maintained (4:3 = 1.333...)
     aspect_ratio = width / height
     expected_ratio = 8000 / 6000
-    assert (
-        abs(aspect_ratio - expected_ratio) < 0.01
-    )  # Allow small floating point difference
+    assert abs(aspect_ratio - expected_ratio) < 0.01  # Allow small floating point difference
 
 
 def test_downsize_handles_rgba_images():
@@ -153,9 +145,7 @@ def test_downsize_handles_rgba_images():
     mock_blob_client.download_blob.return_value = mock_download
 
     # Call downsize function
-    result = downsize_image_if_needed(
-        mock_blob_client, max_size_bytes=MAX_IMAGE_SIZE_BYTES
-    )
+    result = downsize_image_if_needed(mock_blob_client, max_size_bytes=MAX_IMAGE_SIZE_BYTES)
 
     assert result is True
     assert mock_blob_client.upload_blob.called

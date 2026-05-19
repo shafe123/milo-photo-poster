@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")
 from function_app import post_to_postly
 
 
-# Load environment variables from local.settings.json  
+# Load environment variables from local.settings.json
 def load_local_settings(path="local.settings.json"):
     if not os.path.exists(path):
         return {}
@@ -60,9 +60,7 @@ class TestPostlyAPI:
         return "Daily Milo! 😾 Testing the Postly API integration #Milo #Cats #GrumpyCat"
 
     @patch("function_app.requests.post")
-    def test_post_to_postly_success(
-        self, mock_post, sample_image_data, sample_caption
-    ):
+    def test_post_to_postly_success(self, mock_post, sample_image_data, sample_caption):
         """Test successful posting to Postly API"""
         # Mock the upload response
         mock_upload_response = Mock()
@@ -114,9 +112,7 @@ class TestPostlyAPI:
         assert post_data["media"][0]["url"] == "https://storage.postly.ai/test-image.jpg"
 
     @patch("function_app.requests.post")
-    def test_post_to_postly_upload_failure(
-        self, mock_post, sample_image_data, sample_caption
-    ):
+    def test_post_to_postly_upload_failure(self, mock_post, sample_image_data, sample_caption):
         """Test handling of upload failure"""
         # Mock a failed upload response
         mock_response = Mock()
@@ -139,9 +135,7 @@ class TestPostlyAPI:
         assert mock_post.call_count == 1
 
     @patch("function_app.requests.post")
-    def test_post_to_postly_no_url_in_response(
-        self, mock_post, sample_image_data, sample_caption
-    ):
+    def test_post_to_postly_no_url_in_response(self, mock_post, sample_image_data, sample_caption):
         """Test handling when upload doesn't return a URL"""
         # Mock upload response without URL
         mock_response = Mock()
@@ -180,9 +174,7 @@ class TestPostlyAPI:
         mock_post_response = Mock()
         mock_post_response.status_code = 400
         mock_post_response.text = "Bad Request"
-        mock_post_response.raise_for_status.side_effect = Exception(
-            "Post creation failed"
-        )
+        mock_post_response.raise_for_status.side_effect = Exception("Post creation failed")
 
         mock_post.side_effect = [mock_upload_response, mock_post_response]
 
@@ -255,15 +247,18 @@ class TestPostlyAPIIntegration:
     def future_schedule(self):
         """Create a schedule far in the future to prevent immediate posting"""
         from datetime import datetime, timedelta
+
         future_date = datetime.now() + timedelta(days=365)
         return {
             "one_off_date": future_date.strftime("%Y-%m-%d"),
             "time": future_date.strftime("%Y-%m-%dT%H:%M:%S.000Z"),
-            "timezone": "UTC"
+            "timezone": "UTC",
         }
 
     @pytest.mark.integration
-    def test_post_to_postly_real_api(self, sample_image_data, sample_caption, future_schedule, env_with_settings):
+    def test_post_to_postly_real_api(
+        self, sample_image_data, sample_caption, future_schedule, env_with_settings
+    ):
         """
         Integration test that actually calls Postly API.
         IMPORTANT: Schedules post 1 year in the future (safe - won't publish).
@@ -272,7 +267,7 @@ class TestPostlyAPIIntegration:
         Skip by default - run with: pytest -m integration
         """
         config = get_test_config()
-        
+
         # Schedule the post and get the post ID
         success, post_id = post_to_postly(
             api_key=config["POSTLY_API_KEY"],
@@ -286,7 +281,7 @@ class TestPostlyAPIIntegration:
 
         assert success is True, "Failed to schedule post on Postly API"
         assert post_id is not None, "Post ID was not returned"
-        
+
         # Note: Deletion of scheduled posts via key_id is not supported by the API
         # The post will remain scheduled for 1 year in the future (safe, won't publish)
         # If manual cleanup is needed, scheduled posts can be viewed/deleted in Postly dashboard

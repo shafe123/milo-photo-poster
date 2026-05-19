@@ -19,7 +19,7 @@ print("\nConfiguration:")
 print(f"  Endpoint: {endpoint}")
 print(f"  Project ID: {project_id}")
 print(f"  Iteration: {iteration}")
-print(f"  Key: {key[:10]}...{key[-10:]}")
+print(f"  Key: {key[:10]}...{key[-10:]}" if key else "  Key: None")
 
 # Strip trailing slash and construct URL
 endpoint_clean = endpoint.rstrip("/")
@@ -29,7 +29,9 @@ print("\nConstructed URL:")
 print(f"  {prediction_url}")
 
 # Test image URL - using a simple accessible cat image
-test_image_url = "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg"
+test_image_url = (
+    "https://upload.wikimedia.org/wikipedia/commons/thumb/3/3a/Cat03.jpg/1200px-Cat03.jpg"
+)
 
 headers = {"Prediction-Key": key, "Content-Type": "application/json"}
 

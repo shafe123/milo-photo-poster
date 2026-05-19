@@ -49,9 +49,7 @@ def test_milo_detection_real_api_call():
 
     # Test image URL - using a publicly accessible cat image for testing
     # For actual testing, replace with a real Milo photo URL from blob storage
-    TEST_IMAGE_URL = (
-        "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=800"
-    )
+    TEST_IMAGE_URL = "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=800"
 
     # You can also test with an Azure Blob Storage URL if you have a test image uploaded
     # TEST_IMAGE_URL = "https://milophotosstg.blob.core.windows.net/milo-photos/test-image.jpg"
@@ -78,19 +76,13 @@ def test_milo_detection_real_api_call():
     print(f"  Confidence: {confidence:.4f}")
 
     # Verify the function returned valid values
-    assert isinstance(is_milo_present, bool), (
-        "Should return boolean for is_milo_present"
-    )
-    assert 0.0 <= confidence <= 1.0, (
-        f"Confidence should be between 0 and 1, got {confidence}"
-    )
+    assert isinstance(is_milo_present, bool), "Should return boolean for is_milo_present"
+    assert 0.0 <= confidence <= 1.0, f"Confidence should be between 0 and 1, got {confidence}"
 
     # Check if API call was successful (not a fallback result)
     # If confidence is exactly 1.0 and Milo is detected, it might be a fallback from error handling
     if confidence == 1.0 and is_milo_present:
-        print(
-            "\nWarning: Got fallback result (confidence=1.0), API call may have failed"
-        )
+        print("\nWarning: Got fallback result (confidence=1.0), API call may have failed")
         print("  Check if the test image URL is accessible to Custom Vision API")
         # Don't fail the test, but mark it as inconclusive
         pytest.skip("API call may have failed - got fallback result")
@@ -151,9 +143,7 @@ def test_milo_detection_with_blob_storage_image():
 
     # Get the first image from the container
     blobs = list(container_client.list_blobs(name_starts_with=""))
-    image_blobs = [
-        b for b in blobs if b.name.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))
-    ]
+    image_blobs = [b for b in blobs if b.name.lower().endswith((".jpg", ".jpeg", ".png", ".gif"))]
 
     if not image_blobs:
         pytest.skip(f"No images found in container {container_name}")
