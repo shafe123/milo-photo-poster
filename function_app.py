@@ -958,6 +958,7 @@ def generate_ai_image(
     text_model: Optional[str] = None,
     blob_service_client: Optional[BlobServiceClient] = None,
     container_name: Optional[str] = None,
+    caption_context: str = "",
 ) -> Optional[bytes]:
     """
     Generate an AI image of Milo using FLUX.
@@ -971,6 +972,7 @@ def generate_ai_image(
         text_model: Optional (unused)
         blob_service_client: Optional BlobServiceClient for loading reference image
         container_name: Optional container name for reference image
+        caption_context: Optional caption text to align image content with post copy
 
     Returns:
         Image bytes or None if generation failed
@@ -996,6 +998,11 @@ def generate_ai_image(
 
         # Select a random mood and generate prompt with scenario randomness
         mood, prompt = select_mood_and_prompt(milo_description)
+        if caption_context.strip():
+            prompt += (
+                " Match the scene to this caption context while staying photorealistic: "
+                f"\"{caption_context.strip()}\"."
+            )
 
         logging.info(f"Generating AI image with {image_model} using '{mood}' mood")
         logging.info(f"Prompt preview: {prompt[:150]}...")
@@ -1502,6 +1509,7 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
     image_source = None
     image_description = ""
     blob_name = None  # Track blob name for marking as posted
+    witty_caption: Optional[str] = None
 
     try:
         # Step 1: Try to select best photo from blob storage
@@ -1540,6 +1548,14 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
         else:
             # Step 2: Fallback to AI generation
             logging.info("No suitable photo found, generating AI image")
+            context = get_current_context()
+            image_description = "AI-generated image of Milo"
+            witty_caption = generate_witty_caption(
+                text_client,
+                text_model=OPENAI_TEXT_MODEL,
+                context=context,
+                image_description=image_description,
+            )
             image_data = generate_ai_image(
                 image_client,
                 image_model=OPENAI_IMAGE_MODEL,
@@ -1547,9 +1563,9 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
                 text_model=OPENAI_TEXT_MODEL,
                 blob_service_client=blob_service_client,
                 container_name=BLOB_CONTAINER_NAME,
+                caption_context=witty_caption,
             )
             image_source = "AI generated (OpenAI)"
-            image_description = "AI-generated image of Milo"
 
         if not image_data:
             error_msg = "Failed to obtain image (neither from storage nor AI)"
@@ -1557,13 +1573,14 @@ def daily_milo_post(timer: func.TimerRequest) -> None:
             raise RuntimeError(error_msg)
 
         # Step 3: Generate witty caption
-        context = get_current_context()
-        witty_caption = generate_witty_caption(
-            text_client,
-            text_model=OPENAI_TEXT_MODEL,
-            context=context,
-            image_description=image_description,
-        )
+        if witty_caption is None:
+            context = get_current_context()
+            witty_caption = generate_witty_caption(
+                text_client,
+                text_model=OPENAI_TEXT_MODEL,
+                context=context,
+                image_description=image_description,
+            )
 
         # Format caption: "Daily Milo! 😾" + witty caption + [AI disclaimer] + hashtags
         caption_parts = [CAPTION_PREFIX, witty_caption]

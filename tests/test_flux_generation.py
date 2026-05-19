@@ -130,6 +130,32 @@ class TestFluxGeneration:
             # Verify reference image was NOT included
             payload = mock_post.call_args[1]['json']
             assert 'image_prompt' not in payload
+
+    def test_generate_ai_image_includes_caption_context_in_prompt(self):
+        """Test that caption context is incorporated into the image prompt"""
+        from function_app import generate_ai_image
+
+        with patch('function_app.FLUX_API_URL', 'https://example.com/flux'), \
+             patch('function_app.OPENAI_IMAGE_API_KEY', 'test-key'), \
+             patch('function_app.select_mood_and_prompt') as mock_select_prompt, \
+             patch('function_app.requests.post') as mock_post:
+            mock_select_prompt.return_value = ("grumpy", "Base Milo prompt.")
+            mock_response = Mock()
+            mock_response.status_code = 200
+            mock_response.json.return_value = {
+                'data': [{'b64_json': 'ZmFrZV9pbWFnZV9ieXRlcw=='}]
+            }
+            mock_post.return_value = mock_response
+
+            result = generate_ai_image(
+                client=Mock(),
+                image_model="FLUX.2-pro",
+                caption_context="Rainy-day window watching vibes",
+            )
+
+            assert result is not None
+            payload = mock_post.call_args[1]['json']
+            assert "Rainy-day window watching vibes" in payload['prompt']
     
     def test_generate_ai_image_handles_api_error(self, mock_env_vars):
         """Test error handling for FLUX API failures"""
