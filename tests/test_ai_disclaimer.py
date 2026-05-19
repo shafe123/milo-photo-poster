@@ -5,8 +5,6 @@ Run with: pytest tests/test_ai_disclaimer.py -v
 
 import os
 import sys
-import pytest
-from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
@@ -59,7 +57,6 @@ class TestAIDisclaimer:
         assert witty_caption in caption
         
         # Verify order: prefix, caption, disclaimer, hashtags
-        parts = caption.split()
         ai_disclaimer_index = caption.index("(AI-generated image)")
         witty_index = caption.index(witty_caption.split()[0])
         hashtags_index = caption.index("#Milo")

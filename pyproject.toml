@@ -1,0 +1,25 @@
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+extend-exclude = [".venv", ".python_packages"]
+
+[tool.ruff.lint]
+select = ["E", "F"]
+ignore = ["E501"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+
+[tool.mypy]
+python_version = "3.11"
+files = ["function_app.py", "tests"]
+explicit_package_bases = true
+ignore_missing_imports = true
+disable_error_code = ["assignment", "arg-type", "union-attr"]
+show_error_codes = true
+pretty = true
+
+[tool.bandit]
+exclude_dirs = ["tests", "utils", ".venv", ".python_packages"]
+skips = ["B311"]

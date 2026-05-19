@@ -7,7 +7,8 @@ import os
 import sys
 import pytest
 import json
-from unittest.mock import Mock, patch, MagicMock
+import importlib
+from unittest.mock import Mock, patch
 from datetime import datetime
 
 # Add parent directory to path
@@ -17,6 +18,9 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 @pytest.fixture
 def mock_env_vars(monkeypatch):
     """Set up environment variables for testing"""
+    monkeypatch.setenv("OPENAI_IMAGE_API_KEY", "test-api-key")
+    monkeypatch.setenv("FLUX_API_URL", "https://example.com/flux")
+
     # Load from local.settings.json if available
     settings_path = os.path.join(
         os.path.dirname(os.path.dirname(__file__)),
@@ -28,6 +32,14 @@ def mock_env_vars(monkeypatch):
             settings = json.load(f)
             for key, value in settings.get('Values', {}).items():
                 monkeypatch.setenv(key, value)
+
+
+@pytest.fixture
+def function_app_module(mock_env_vars):
+    """Reload function_app after environment setup so module-level config is refreshed."""
+    import function_app
+
+    return importlib.reload(function_app)
 
 
 @pytest.fixture
@@ -43,10 +55,8 @@ def mock_blob_client():
 class TestFluxGeneration:
     """Unit tests for FLUX image generation (mocked API calls)"""
     
-    def test_generate_ai_image_loads_description(self, mock_env_vars, mock_blob_client):
+    def test_generate_ai_image_loads_description(self, function_app_module, mock_blob_client):
         """Test that the function loads Milo's description from file"""
-        from function_app import generate_ai_image
-        
         with patch('function_app.requests.post') as mock_post:
             # Mock successful FLUX response
             mock_response = Mock()
@@ -57,7 +67,7 @@ class TestFluxGeneration:
             mock_post.return_value = mock_response
             
             # Call the function
-            result = generate_ai_image(
+            result = function_app_module.generate_ai_image(
                 client=Mock(),
                 image_model="FLUX.2-pro",
                 blob_service_client=mock_blob_client,
@@ -79,10 +89,8 @@ class TestFluxGeneration:
             assert 'prompt' in payload
             assert len(payload['prompt']) > 100  # Should have detailed description
     
-    def test_generate_ai_image_includes_reference_image(self, mock_env_vars, mock_blob_client):
+    def test_generate_ai_image_includes_reference_image(self, function_app_module, mock_blob_client):
         """Test that reference image is included when blob storage is available"""
-        from function_app import generate_ai_image
-        
         with patch('function_app.requests.post') as mock_post:
             mock_response = Mock()
             mock_response.status_code = 200
@@ -91,7 +99,7 @@ class TestFluxGeneration:
             }
             mock_post.return_value = mock_response
             
-            result = generate_ai_image(
+            result = function_app_module.generate_ai_image(
                 client=Mock(),
                 image_model="FLUX.2-pro",
                 blob_service_client=mock_blob_client,
@@ -106,10 +114,8 @@ class TestFluxGeneration:
             # Verify it loaded the first reference photo
             mock_blob_client.get_blob_client.assert_called_once()
     
-    def test_generate_ai_image_without_reference_image(self, mock_env_vars):
+    def test_generate_ai_image_without_reference_image(self, function_app_module):
         """Test that generation works without reference image"""
-        from function_app import generate_ai_image
-        
         with patch('function_app.requests.post') as mock_post:
             mock_response = Mock()
             mock_response.status_code = 200
@@ -118,7 +124,7 @@ class TestFluxGeneration:
             }
             mock_post.return_value = mock_response
             
-            result = generate_ai_image(
+            result = function_app_module.generate_ai_image(
                 client=Mock(),
                 image_model="FLUX.2-pro",
                 blob_service_client=None,
@@ -157,17 +163,15 @@ class TestFluxGeneration:
             payload = mock_post.call_args[1]['json']
             assert "Rainy-day window watching vibes" in payload['prompt']
     
-    def test_generate_ai_image_handles_api_error(self, mock_env_vars):
+    def test_generate_ai_image_handles_api_error(self, function_app_module):
         """Test error handling for FLUX API failures"""
-        from function_app import generate_ai_image
-        
         with patch('function_app.requests.post') as mock_post:
             mock_response = Mock()
             mock_response.status_code = 500
             mock_response.text = "Internal Server Error"
             mock_post.return_value = mock_response
             
-            result = generate_ai_image(
+            result = function_app_module.generate_ai_image(
                 client=Mock(),
                 image_model="FLUX.2-pro"
             )

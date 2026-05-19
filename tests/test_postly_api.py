@@ -2,15 +2,17 @@ import sys
 import os
 import json
 import pytest
-from unittest.mock import patch, Mock, MagicMock
+from unittest.mock import patch, Mock
 
 sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
-from function_app import post_to_postly, delete_postly_post
+from function_app import post_to_postly
 
 
 # Load environment variables from local.settings.json  
 def load_local_settings(path="local.settings.json"):
-    with open(path, "r") as f:
+    if not os.path.exists(path):
+        return {}
+    with open(path, "r", encoding="utf-8") as f:
         settings = json.load(f)
     return settings.get("Values", {})
 
@@ -20,6 +22,8 @@ def load_local_settings(path="local.settings.json"):
 def env_with_settings(monkeypatch):
     """Load settings for tests that need real credentials"""
     settings = load_local_settings()
+    if not settings:
+        pytest.skip("local.settings.json not found for integration tests")
     for k, v in settings.items():
         monkeypatch.setenv(k, v)
     return settings

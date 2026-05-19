@@ -6,20 +6,29 @@ Run with: pytest tests/test_function_failures.py -v
 
 import sys
 import os
+import importlib
 import pytest
-from unittest.mock import Mock, patch, MagicMock
+from unittest.mock import Mock, patch
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 class TestFunctionFailures:
     """Tests that verify the function fails loudly instead of silently"""
+
+    @staticmethod
+    def _load_daily_milo_post():
+        """Reload function_app so module-level environment config is refreshed per test."""
+        import function_app
+
+        return importlib.reload(function_app).daily_milo_post
     
     @patch.dict(os.environ, {
         'AZURE_STORAGE_CONNECTION_STRING': 'test',
         'COMPUTER_VISION_ENDPOINT': 'test',
         'COMPUTER_VISION_KEY': 'test',
         'OPENAI_TEXT_API_KEY': 'test',
+        'OPENAI_IMAGE_API_KEY': 'test',
         'OPENAI_IMAGE_ENDPOINT': 'test',
         'OPENAI_TEXT_ENDPOINT': 'test',
         'POSTLY_API_KEY': 'test',
@@ -31,11 +40,11 @@ class TestFunctionFailures:
     })
     def test_raises_exception_when_postly_fails(self):
         """Test that function raises exception when Postly posting fails"""
-        from function_app import daily_milo_post
+        daily_milo_post = self._load_daily_milo_post()
         
-        with patch('function_app.BlobServiceClient') as mock_blob_client, \
-             patch('function_app.ComputerVisionClient') as mock_cv_client, \
-             patch('function_app.AzureOpenAI') as mock_openai, \
+        with patch('function_app.BlobServiceClient'), \
+             patch('function_app.ComputerVisionClient'), \
+             patch('function_app.AzureOpenAI'), \
              patch('function_app.select_best_photo') as mock_select, \
              patch('function_app.generate_witty_caption') as mock_caption, \
              patch('function_app.post_to_postly') as mock_post:
@@ -59,6 +68,7 @@ class TestFunctionFailures:
         'COMPUTER_VISION_ENDPOINT': 'test',
         'COMPUTER_VISION_KEY': 'test',
         'OPENAI_TEXT_API_KEY': 'test',
+        'OPENAI_IMAGE_API_KEY': 'test',
         'OPENAI_IMAGE_ENDPOINT': 'test',
         'OPENAI_TEXT_ENDPOINT': 'test',
         'POSTLY_API_KEY': 'test',
@@ -70,11 +80,11 @@ class TestFunctionFailures:
     })
     def test_raises_exception_when_no_image_found(self):
         """Test that function raises exception when no image can be obtained"""
-        from function_app import daily_milo_post
+        daily_milo_post = self._load_daily_milo_post()
         
-        with patch('function_app.BlobServiceClient') as mock_blob_client, \
-             patch('function_app.ComputerVisionClient') as mock_cv_client, \
-             patch('function_app.AzureOpenAI') as mock_openai, \
+        with patch('function_app.BlobServiceClient'), \
+             patch('function_app.ComputerVisionClient'), \
+             patch('function_app.AzureOpenAI'), \
              patch('function_app.select_best_photo') as mock_select, \
              patch('function_app.generate_ai_image') as mock_generate:
             
@@ -92,10 +102,9 @@ class TestFunctionFailures:
     
     def test_raises_exception_when_config_missing(self):
         """Test that function raises exception when required config is missing or invalid"""
-        from function_app import daily_milo_post
-        
         # Clear all environment variables
         with patch.dict(os.environ, {}, clear=True):
+            daily_milo_post = self._load_daily_milo_post()
             # Create mock timer
             mock_timer = Mock()
             
@@ -108,6 +117,7 @@ class TestFunctionFailures:
         'COMPUTER_VISION_ENDPOINT': 'test',
         'COMPUTER_VISION_KEY': 'test',
         'OPENAI_TEXT_API_KEY': 'test',
+        'OPENAI_IMAGE_API_KEY': 'test',
         'OPENAI_IMAGE_ENDPOINT': 'test',
         'OPENAI_TEXT_ENDPOINT': 'test',
         'POSTLY_API_KEY': 'test',
@@ -119,15 +129,15 @@ class TestFunctionFailures:
     })
     def test_success_does_not_raise_exception(self):
         """Test that function completes successfully when everything works"""
-        from function_app import daily_milo_post
+        daily_milo_post = self._load_daily_milo_post()
         
         with patch('function_app.BlobServiceClient') as mock_blob_client, \
-             patch('function_app.ComputerVisionClient') as mock_cv_client, \
-             patch('function_app.AzureOpenAI') as mock_openai, \
+             patch('function_app.ComputerVisionClient'), \
+             patch('function_app.AzureOpenAI'), \
              patch('function_app.select_best_photo') as mock_select, \
              patch('function_app.generate_witty_caption') as mock_caption, \
              patch('function_app.post_to_postly') as mock_post, \
-             patch('function_app.mark_blob_as_posted') as mock_mark:
+             patch('function_app.mark_blob_as_posted'):
             
             # Mock successful photo selection
             mock_select.return_value = (b"fake_image_data", "test.jpg", "Test image")

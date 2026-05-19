@@ -275,6 +275,26 @@ for blob in container.list_blobs():
     print(blob.name)
 ```
 
+### 7. Code Quality Checks
+Run the quality checks locally:
+
+```bash
+ruff check .
+ruff format . --diff
+mypy function_app.py tests
+bandit -c pyproject.toml -r .
+pytest -m "not integration"
+pytest -m integration
+```
+
+Enable pre-commit hooks:
+
+```bash
+pip install pre-commit
+pre-commit install
+pre-commit install --hook-type pre-push
+```
+
 ## Deployment
 
 ### Option 1: Deploy via Azure CLI (Recommended for Flex Consumption)
@@ -303,6 +323,8 @@ func azure functionapp publish milo-photo-poster
 ### Option 3: Deploy via GitHub Actions (Automated)
 
 A GitHub Actions workflow is pre-configured in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) that automatically deploys to your Flex Consumption Function App when you push to the `main` branch.
+
+Code quality checks run in [`.github/workflows/quality.yml`](.github/workflows/quality.yml) on pull requests and pushes to `main`.
 
 **Key features of this workflow:**
 - ✓ Uses Azure Functions Core Tools for reliable Flex Consumption deployment
