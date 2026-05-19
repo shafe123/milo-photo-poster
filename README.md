@@ -322,7 +322,7 @@ func azure functionapp publish milo-photo-poster
 
 ### Option 3: Deploy via GitHub Actions (Automated)
 
-The repository includes three GitHub Actions workflows:
+The repository includes automated CI/CD and dependency management:
 
 #### CI/CD Pipeline ([`.github/workflows/cicd.yml`](.github/workflows/cicd.yml))
 This workflow runs quality checks and automatically deploys to Azure when code is pushed to `main`:
@@ -377,6 +377,18 @@ To manually trigger an update check:
 2. Click "Actions" tab
 3. Select "Update GitHub Actions Versions"
 4. Click "Run workflow"
+
+#### Dependabot ([`.github/dependabot.yml`](.github/dependabot.yml))
+Dependabot automatically monitors and updates Python dependencies:
+
+**Python Dependencies** (requirements.txt):
+- ✓ Checks weekly on Sundays
+- ✓ Groups minor and patch updates together to reduce PR noise
+- ✓ Labels PRs with `dependencies` and `python`
+
+**No setup required** - Dependabot is enabled automatically on GitHub repositories with a `dependabot.yml` file.
+
+**Note**: GitHub Actions updates are handled by the separate GitHub Actions Version Updater workflow above.
 
 ## Monitoring
 
