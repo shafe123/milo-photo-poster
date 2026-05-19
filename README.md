@@ -322,28 +322,60 @@ func azure functionapp publish milo-photo-poster
 
 ### Option 3: Deploy via GitHub Actions (Automated)
 
-A GitHub Actions workflow is pre-configured in [`.github/workflows/deploy.yml`](.github/workflows/deploy.yml) that automatically deploys to your Flex Consumption Function App when you push to the `main` branch.
+The repository includes three GitHub Actions workflows:
 
-Code quality checks run in [`.github/workflows/quality.yml`](.github/workflows/quality.yml) on pull requests and pushes to `main`.
+#### CI/CD Pipeline ([`.github/workflows/cicd.yml`](.github/workflows/cicd.yml))
+This workflow runs quality checks and automatically deploys to Azure when code is pushed to `main`:
 
-**Key features of this workflow:**
+**Quality Checks** (run on all PRs and main pushes):
+- ✓ Ruff linting and formatting
+- ✓ mypy type checking
+- ✓ Bandit security scanning
+- ✓ Unit tests
+- ✓ Integration tests
+
+**Deployment** (only on main branch pushes, after all checks pass):
 - ✓ Uses Azure Functions Core Tools for reliable Flex Consumption deployment
 - ✓ Proper Python dependency handling with virtual environment
 - ✓ OIDC authentication (no publish profiles needed)
-- ✓ Automatically triggers on push to main branch
 - ✓ Can also be manually triggered via workflow_dispatch
-
-**The workflow is already configured and will automatically deploy when you push to main.**
 
 **Note**: Application settings (API keys, connection strings) are **not** included in the deployment. Manage them separately using:
 ```powershell
 .\deploy-settings.ps1
 ```
 
-To manually trigger a deployment without pushing code:
+#### GitHub Actions Version Updater ([`.github/workflows/update-actions.yml`](.github/workflows/update-actions.yml))
+This workflow automatically checks for updates to GitHub Actions used in the repository and creates pull requests with version updates:
+
+- ✓ Runs weekly on Sundays
+- ✓ Checks all workflow files for action updates
+- ✓ Creates PRs with updated versions
+- ✓ Can also be manually triggered
+
+**Setup Required**: Create a Personal Access Token (PAT) for this workflow:
+
+1. Go to GitHub Settings > Developer settings > Personal access tokens > [Fine-grained tokens](https://github.com/settings/tokens?type=beta)
+2. Click "Generate new token"
+3. Set the following:
+   - **Token name**: `GitHub Actions Version Updater`
+   - **Repository access**: Only select repositories > `milo-photo-poster`
+   - **Repository permissions**:
+     - Contents: Read and write
+     - Workflows: Read and write
+     - Pull requests: Read and write
+     - Metadata: Read-only (auto-selected)
+4. Click "Generate token" and copy it
+5. Go to your repository Settings > Secrets and variables > Actions
+6. Click "New repository secret"
+7. Name: `GH_ACTIONS_UPDATE_TOKEN`
+8. Value: Paste your token
+9. Click "Add secret"
+
+To manually trigger an update check:
 1. Go to your repository on GitHub
 2. Click "Actions" tab
-3. Select "Deploy to Azure Functions (Flex Consumption)"
+3. Select "Update GitHub Actions Versions"
 4. Click "Run workflow"
 
 ## Monitoring

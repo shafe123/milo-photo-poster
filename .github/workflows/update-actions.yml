@@ -1,0 +1,41 @@
+name: Update GitHub Actions Versions
+
+# Run weekly on Sunday at 12:00 AM UTC
+on:
+    workflow_dispatch: # Allow manual trigger
+    schedule:
+        - cron: "0 0 * * 0"
+
+permissions:
+    contents: read
+
+jobs:
+    update-actions:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v4
+              with:
+                  # Use PAT with workflow scope instead of GITHUB_TOKEN
+                  # GITHUB_TOKEN doesn't have permission to update workflows
+                  token: ${{ secrets.GH_ACTIONS_UPDATE_TOKEN }}
+
+            - name: Run GitHub Actions Version Updater
+              uses: saadmk11/github-actions-version-updater@v0.9.0
+              id: gha-update
+              with:
+                  token: ${{ secrets.GH_ACTIONS_UPDATE_TOKEN }}
+                  committer_username: "github-actions[bot]"
+                  committer_email: "github-actions[bot]@users.noreply.github.com"
+                  commit_message: "chore: update GitHub Actions versions"
+                  pull_request_title: "chore: Update GitHub Actions versions"
+                  pull_request_labels: "dependencies,automated"
+                  update_version_with: "release-tag"
+                  release_types: "major,minor"
+                  skip_pull_request: "false"
+
+            - name: PR created
+              if: steps.gha-update.outputs.GHA_UPDATE_PR_NUMBER != ''
+              run: |
+                  echo "✓ Pull request created: #${{ steps.gha-update.outputs.GHA_UPDATE_PR_NUMBER }}"
+                  echo "Review and merge the PR to update GitHub Actions versions"
